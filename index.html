@@ -48,6 +48,10 @@
   .meter i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--green) 60%,var(--amber) 82%,var(--rec));transition:width .05s linear}
   .led{width:10px;height:10px;border-radius:50%;background:#7A2015;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
   .led.on{background:var(--rec);box-shadow:0 0 10px 2px rgba(232,68,46,.7)}
+  .in-mod{display:flex;flex-direction:column;gap:3px;background:var(--well);border-radius:8px;padding:8px 10px;box-shadow:inset 0 2px 4px rgba(0,0,0,.18)}
+  .in-mod .lab{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--ink-soft);display:flex;justify-content:space-between;gap:8px}
+  .in-mod .lab output{color:var(--ink)}
+  .in-mod input[type=range]{width:120px;height:18px}
   .main{display:grid;grid-template-columns:250px 1fr;gap:18px}
   .well{background:var(--well);border-radius:var(--radius);box-shadow:inset 0 2px 6px rgba(0,0,0,.18);padding:14px}
   .label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -142,7 +146,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.6.1</small></h1>
+      <h1>CLIPDECK <small>v0.7</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -159,6 +163,10 @@
     </div>
 
     <div class="rec-cluster">
+      <div class="in-mod">
+        <span class="lab">INPUT <output id="oInGain">0 dB</output></span>
+        <input type="range" id="inGain" min="-24" max="24" step="0.5" value="0" title="Input gain — double-click to reset">
+      </div>
       <div class="led" id="recLed"></div>
       <button class="rec-btn" id="recBtn" aria-label="Start recording"><span class="dot">REC</span></button>
       <div class="screen">
@@ -365,7 +373,6 @@
         </div>
         <div class="fx-foot">
           <button class="hbtn" id="ppBtn">Ping-pong</button>
-          <button class="hbtn" id="limitBtn">Limiter</button>
           <button class="hbtn" id="addTlBtn" disabled>＋ Timeline</button>
           <button class="hbtn primary" id="exportBtn" disabled>Export WAV</button>
           <span class="status" id="status"></span>
@@ -383,6 +390,23 @@
           <button class="hbtn" id="mixStopBtn" disabled>■ Stop</button>
           <button class="hbtn primary" id="mixExportBtn" disabled>Export mix WAV</button>
           <span class="status" id="tlStatus"></span>
+        </div>
+      </div>
+
+      <div class="well deck-only">
+        <div class="label">Master bus <span>comp → limiter → out · applies to playback and every export</span></div>
+        <div class="sl-row" style="margin-bottom:0">
+          <div class="sl"><label>Comp</label>
+            <button class="mini" id="compBtn">On</button></div>
+          <div class="sl"><label>Threshold <output id="oMThr">-24 dB</output></label>
+            <input type="range" id="mThr" min="-48" max="0" step="1" value="-24" style="width:130px"></div>
+          <div class="sl"><label>Ratio <output id="oMRatio">4:1</output></label>
+            <input type="range" id="mRatio" min="1" max="12" step="0.5" value="4" style="width:110px"></div>
+          <div class="sl"><label>Makeup <output id="oMMakeup">0 dB</output></label>
+            <input type="range" id="mMakeup" min="0" max="12" step="0.5" value="0" style="width:110px"></div>
+          <div class="sl"><label>Limiter</label>
+            <button class="mini" id="limitBtn">On</button></div>
+          <span class="status" id="oGR"></span>
         </div>
       </div>
 
@@ -414,6 +438,46 @@
   let selStep = -1;
   let tapTimes = [];
   const undoStack = [];
+  let inGainDb = 0, recGainNode = null;
+  const mset = { on:false, thr:-24, ratio:4, makeup:0 };
+  const dbToLin = v => Math.pow(10, v/20);
+  // live master bus: everything audible routes through master.in
+  const master = { in: ctx.createGain(), comp: ctx.createDynamicsCompressor(), makeup: ctx.createGain(), lim: null };
+  function applyMasterParams(){
+    master.comp.threshold.value = mset.thr;
+    master.comp.knee.value = 6;
+    master.comp.ratio.value = mset.ratio;
+    master.comp.attack.value = 0.008;
+    master.comp.release.value = 0.18;
+    master.makeup.gain.value = dbToLin(mset.makeup);
+  }
+  function rebuildMaster(){
+    for (const n of [master.in, master.comp, master.makeup, master.lim]){ if (n){ try{ n.disconnect(); }catch(e){} } }
+    if (!master.lim) master.lim = makeLimiter(ctx);
+    applyMasterParams();
+    let node = master.in;
+    if (mset.on){ node.connect(master.comp); master.comp.connect(master.makeup); node = master.makeup; }
+    if (limiter){ node.connect(master.lim); node = master.lim; }
+    node.connect(ctx.destination);
+  }
+  // render a buffer through the master chain offline, so exports match what you hear
+  async function applyMasterOffline(buf){
+    if (!mset.on && !limiter) return buf;
+    const oc = new OfflineAudioContext(2, buf.length, buf.sampleRate);
+    const src = oc.createBufferSource(); src.buffer = buf;
+    let node = src;
+    if (mset.on){
+      const comp = oc.createDynamicsCompressor();
+      comp.threshold.value = mset.thr; comp.knee.value = 6; comp.ratio.value = mset.ratio;
+      comp.attack.value = 0.008; comp.release.value = 0.18;
+      const mk = oc.createGain(); mk.gain.value = dbToLin(mset.makeup);
+      node.connect(comp); comp.connect(mk); node = mk;
+    }
+    if (limiter){ const l = makeLimiter(oc); node.connect(l); node = l; }
+    node.connect(oc.destination);
+    src.start(0);
+    return oc.startRendering();
+  }
 
   const $ = id => document.getElementById(id);
   const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, lfoRate:1, lfoDepth:0, lfoShape:'sine', lfoDest:'pan', pingpong:false };
@@ -519,7 +583,7 @@
   const deleteClipDB = id => tx('clips','readwrite', s => s.delete(id)).then(updateStoreInfo).catch(()=>{});
   const saveMeta = () => tx('meta','readwrite', s => {
     s.put(timeline, 'timeline');
-    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
+    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, mset:{...mset}, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
   }).catch(()=>{});
   const getAll = store => new Promise((res) => {
     if (!db) return res([]);
@@ -570,6 +634,8 @@
         autoTrimOn = state.autoTrimOn !== false;
         snapOn = state.snapOn !== false;
         uiMode = state.uiMode || 'deck'; // pre-v0.5 users were already in the deep end
+        if (typeof state.inGainDb === 'number') inGainDb = state.inGainDb;
+        if (state.mset) Object.assign(mset, state.mset);
         if (state.sset) Object.assign(sset, state.sset);
         if (Array.isArray(state.pattern)) pattern = pattern.map((p,i)=> state.pattern[i] ? {...defaultStep(i), ...state.pattern[i]} : p);
         $('fCross').value = crossfade; $('oCross').textContent = crossfade.toFixed(1)+'s';
@@ -586,6 +652,7 @@
     }catch(e){}
     if (!hadState) uiMode = 'simple';
     applyMode();
+    syncMaster(); rebuildMaster();
     renderClips(); renderTimeline(); renderSteps();
     updateStoreInfo();
   }
@@ -873,8 +940,7 @@
     applyFades(chain.out.gain, 0, coreDur, p);
     src.connect(chain.input);
     if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
-    if (limiter){ const comp = makeLimiter(oc); chain.out.connect(comp); comp.connect(oc.destination); }
-    else chain.out.connect(oc.destination);
+    chain.out.connect(oc.destination);
     src.start(0, offset, dur);
     const buffer = await oc.startRendering();
     return { buffer, coreDur };
@@ -929,8 +995,16 @@
     }
     await ctx.resume();
     recChunks = [];
+    // input stage: raw stream → gain → recorder destination, so gain is printed into the take
+    const rawSrc = ctx.createMediaStreamSource(mediaStream);
+    recGainNode = ctx.createGain();
+    recGainNode.gain.value = dbToLin(inGainDb);
+    const recDest = ctx.createMediaStreamDestination();
+    recDest.channelCount = 2;
+    rawSrc.connect(recGainNode);
+    recGainNode.connect(recDest);
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
-    recorder = new MediaRecorder(mediaStream, Object.assign({audioBitsPerSecond:256000}, mime ? {mimeType:mime} : {}));
+    recorder = new MediaRecorder(recDest.stream, Object.assign({audioBitsPerSecond:256000}, mime ? {mimeType:mime} : {}));
     recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
     recorder.onstop = onRecStop;
     recorder.start(100);
@@ -940,9 +1014,9 @@
     $('recLed').classList.add('on');
     setStatus('Recording ' + (source==='desktop'?'desktop':'mic') + '… hit REC again to stop.');
     recTimer = setInterval(()=>{ $('recTime').textContent = fmt((performance.now()-recStart)/1000); }, 100);
-    // stereo meter: split channels so a mono source visibly shows a dead R bar
+    // stereo meter: split channels POST-GAIN so the bars show what's being printed
     const split = ctx.createChannelSplitter(2);
-    ctx.createMediaStreamSource(mediaStream).connect(split);
+    recGainNode.connect(split);
     const anL = ctx.createAnalyser(); anL.fftSize = 512;
     const anR = ctx.createAnalyser(); anR.fftSize = 512;
     split.connect(anL, 0);
@@ -970,6 +1044,7 @@
     $('recLed').classList.remove('on');
     mediaStream.getTracks().forEach(t=>t.stop());
     recorder = null;
+    recGainNode = null;
     const blob = new Blob(recChunks, {type: recChunks[0]?.type || 'audio/webm'});
     if (!blob.size){ setStatus('Nothing captured.'); return; }
     setStatus('Decoding…');
@@ -1312,13 +1387,57 @@
     $('ppBtn').classList.toggle('toggled', fx.pingpong);
     restartIfPlaying();
   };
+  // input gain — live-adjustable while recording
+  $('inGain').addEventListener('input', e => {
+    inGainDb = parseFloat(e.target.value);
+    $('oInGain').textContent = (inGainDb>0?'+':'') + (inGainDb % 1 ? inGainDb.toFixed(1) : inGainDb) + ' dB';
+    if (recGainNode) recGainNode.gain.value = dbToLin(inGainDb);
+    saveMeta();
+  });
+  // master bus controls
+  $('compBtn').onclick = () => {
+    mset.on = !mset.on;
+    $('compBtn').classList.toggle('toggled', mset.on);
+    rebuildMaster(); saveMeta();
+  };
+  $('mThr').addEventListener('input', e => {
+    mset.thr = parseFloat(e.target.value);
+    $('oMThr').textContent = mset.thr + ' dB';
+    applyMasterParams(); saveMeta();
+  });
+  $('mRatio').addEventListener('input', e => {
+    mset.ratio = parseFloat(e.target.value);
+    $('oMRatio').textContent = mset.ratio + ':1';
+    applyMasterParams(); saveMeta();
+  });
+  $('mMakeup').addEventListener('input', e => {
+    mset.makeup = parseFloat(e.target.value);
+    $('oMMakeup').textContent = (mset.makeup % 1 ? mset.makeup.toFixed(1) : mset.makeup) + ' dB';
+    applyMasterParams(); saveMeta();
+  });
+  function syncMaster(){
+    $('compBtn').classList.toggle('toggled', mset.on);
+    $('limitBtn').classList.toggle('toggled', limiter);
+    $('mThr').value = mset.thr; $('oMThr').textContent = mset.thr + ' dB';
+    $('mRatio').value = mset.ratio; $('oMRatio').textContent = mset.ratio + ':1';
+    $('mMakeup').value = mset.makeup; $('oMMakeup').textContent = (mset.makeup % 1 ? mset.makeup.toFixed(1) : mset.makeup) + ' dB';
+    $('inGain').value = inGainDb;
+    $('oInGain').textContent = (inGainDb>0?'+':'') + (inGainDb % 1 ? inGainDb.toFixed(1) : inGainDb) + ' dB';
+  }
+  // gain-reduction readout
+  setInterval(() => {
+    if (mset.on){
+      const gr = master.comp.reduction;
+      $('oGR').textContent = gr < -0.1 ? 'GR ' + gr.toFixed(1) + ' dB' : 'GR —';
+    } else $('oGR').textContent = '';
+  }, 150);
   // double-click any slider to snap it back to neutral
   const SLIDER_DEFAULTS = {
     fRate:1, fPitch:0, fPan:0, fLfoRate:1, fLfoDepth:0, fVerb:0, fDelay:0, fFb:0.35,
     fCrunch:0, fFreq:1, fFadeIn:0, fFadeOut:0, fGain:1,
     xRate:1, xVerb:0, xGain:1,
     sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
-    fCross:0
+    fCross:0, inGain:0, mThr:-24, mRatio:4, mMakeup:0
   };
   document.querySelectorAll('input[type=range]').forEach(el => {
     el.addEventListener('dblclick', () => {
@@ -1392,7 +1511,7 @@
   $('limitBtn').onclick = () => {
     limiter = !limiter;
     $('limitBtn').classList.toggle('toggled', limiter);
-    saveMeta(); restartIfPlaying();
+    rebuildMaster(); saveMeta();
   };
 
   // ================= clip playback =================
@@ -1413,9 +1532,8 @@
     const chain = buildChain(ctx, fx);
     src.connect(chain.input);
     if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
-    let tailNode = chain.out;
-    if (limiter){ const comp = makeLimiter(ctx); chain.out.connect(comp); tailNode = comp; }
-    tailNode.connect(ctx.destination);
+    const tailNode = chain.out;
+    tailNode.connect(master.in);
     const t0 = ctx.currentTime;
     if (!looping) applyFades(chain.out.gain, t0, coreDur, fx);
     if (looping) src.start(t0, offset);
@@ -1511,9 +1629,8 @@
     const bufR = await getSourceBuffer(cur, true, fx.pitch);
     if (!cur) return;
     const chain = buildChain(ctx, fx);
-    let tailNode = chain.out;
-    if (limiter){ const comp = makeLimiter(ctx); chain.out.connect(comp); tailNode = comp; }
-    tailNode.connect(ctx.destination);
+    const tailNode = chain.out;
+    tailNode.connect(master.in);
     const stepDur = STEP();
     seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], chain, tailNode, stepDur, bounds };
     const tick = () => {
@@ -1850,9 +1967,7 @@
     const totalDur = stepTimeOf(steps, 0.02, stepDur) + tail;
     const oc = new OfflineAudioContext(2, Math.ceil(totalDur * MIX_SR), MIX_SR);
     const chain = buildChain(oc, fx);
-    let tailNode = chain.out;
-    if (limiter){ const comp = makeLimiter(oc); chain.out.connect(comp); tailNode = comp; }
-    tailNode.connect(oc.destination);
+    chain.out.connect(oc.destination);
     for (let abs=0; abs<steps; abs++){
       const stepIdx = abs % sset.len;
       const loop = Math.floor(abs / sset.len);
@@ -1863,7 +1978,7 @@
         scheduleStep(oc, chain, bufN, bufR, st, t, span, bounds);
       }
     }
-    const rendered = await oc.startRendering();
+    const rendered = await applyMasterOffline(await oc.startRendering());
     const blob = new Blob([encodeWav(rendered)], {type:'audio/wav'});
     addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed, false);
     // the FX are printed into the bounce — reset the live chain so playback isn't double-processed
@@ -1879,7 +1994,7 @@
     const item = { clipId:cur.id, trimA, trimB, reversed, fx:{...fx} };
     const r = await renderItem(item);
     if (!r){ setStatus('Render failed.'); return; }
-    downloadWav(r.buffer, cur.name);
+    downloadWav(await applyMasterOffline(r.buffer), cur.name);
     setStatus('Exported.');
   }
   $('exportBtn').onclick = exportCurrent;
@@ -1997,7 +2112,7 @@
     ctx.resume();
     const src = ctx.createBufferSource();
     src.buffer = mix;
-    src.connect(ctx.destination);
+    src.connect(master.in);
     const t0 = ctx.currentTime;
     src.start(t0);
     mixPlaying = { src, t0, rafId:null };
@@ -2020,7 +2135,7 @@
     stopMix();
     const mix = await stitchMix();
     if (!mix){ setTlStatus('Nothing to export.'); return; }
-    downloadWav(mix, 'clipdeck_mix');
+    downloadWav(await applyMasterOffline(mix), 'clipdeck_mix');
     setTlStatus('Exported mix · ' + fmt(mix.duration));
   };
 
@@ -2054,6 +2169,8 @@
   }
   syncSeqControls();
   syncSimple();
+  syncMaster();
+  rebuildMaster();
   renderSteps();
   drawWave();
   restore();
