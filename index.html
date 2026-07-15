@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CLIPDECK — desktop audio recorder</title>
+<title>CLIPDECK — record, slice & sequence desktop audio</title>
 <style>
   :root{
     --panel:#DAD9D3; --panel-hi:#E8E7E2; --well:#C4C3BC; --well-deep:#B0AFA8;
@@ -16,12 +16,14 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{font-family:var(--sans);background:#9E9D96;color:var(--ink);display:flex;justify-content:center;padding:24px 16px}
+  body.simple .deck-only{display:none !important}
+  body:not(.simple) .simple-only{display:none !important}
   .device{
     width:100%;max-width:1060px;background:var(--panel);border-radius:22px;
     box-shadow:0 24px 60px rgba(0,0,0,.35), inset 0 2px 0 rgba(255,255,255,.6), inset 0 -3px 0 rgba(0,0,0,.15);
-    padding:22px 24px 26px;display:flex;flex-direction:column;gap:18px;
+    padding:22px 24px 26px;display:flex;flex-direction:column;gap:18px;align-self:flex-start;
   }
-  .topbar{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .brand{display:flex;flex-direction:column;gap:2px;margin-right:auto}
   .brand h1{font-size:20px;letter-spacing:.14em;font-weight:800}
   .brand h1 small{font-size:11px;color:var(--ink-soft);font-weight:400;letter-spacing:.06em}
@@ -29,6 +31,7 @@
   .src-toggle{display:flex;background:var(--well);border-radius:999px;padding:4px;gap:4px;box-shadow:inset 0 2px 4px rgba(0,0,0,.18)}
   .src-toggle button{border:0;background:transparent;font-family:var(--mono);font-size:11px;letter-spacing:.08em;padding:8px 16px;border-radius:999px;cursor:pointer;color:var(--ink-soft);text-transform:uppercase}
   .src-toggle button.on{background:var(--panel-hi);color:var(--ink);box-shadow:0 2px 4px rgba(0,0,0,.2)}
+  .src-toggle button.unavail{opacity:.4;cursor:not-allowed}
   .rec-cluster{display:flex;align-items:center;gap:14px}
   .rec-btn{
     width:64px;height:64px;border-radius:50%;border:0;cursor:pointer;position:relative;
@@ -52,7 +55,8 @@
   .mini{border:0;border-radius:6px;padding:4px 10px;cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;background:var(--panel-hi);box-shadow:0 2px 0 var(--well-deep)}
   .mini:active{transform:translateY(1px);box-shadow:none}
   .mini.toggled{background:var(--blue);color:#fff}
-  .clips{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow-y:auto}
+  .mini:disabled{opacity:.4;cursor:not-allowed}
+  .clips{display:flex;flex-direction:column;gap:8px;max-height:460px;overflow-y:auto}
   .clips.dragover{outline:3px dashed var(--blue);outline-offset:-3px;border-radius:8px}
   .clip{background:var(--panel-hi);border-radius:8px;padding:10px 12px;cursor:pointer;border:2px solid transparent;box-shadow:0 2px 4px rgba(0,0,0,.15);display:flex;flex-direction:column;gap:4px}
   .clip.sel{border-color:var(--blue)}
@@ -62,6 +66,8 @@
   .clip .del{border:0;background:transparent;color:var(--ink-soft);cursor:pointer;font-size:12px;padding:2px 4px}
   .clip .del:hover{color:var(--rec)}
   .empty{font-family:var(--mono);font-size:11px;color:var(--ink-soft);line-height:1.7;padding:8px 2px}
+  .proj{display:flex;gap:6px;margin-top:10px;border-top:1px solid var(--well-deep);padding-top:10px;align-items:center}
+  .proj span{font-family:var(--mono);font-size:9px;color:var(--ink-soft);margin-left:auto}
   .editor{display:flex;flex-direction:column;gap:14px}
   canvas#wave{width:100%;height:150px;display:block;background:var(--screen);border-radius:8px;box-shadow:inset 0 3px 8px rgba(0,0,0,.6);cursor:ew-resize;touch-action:none}
   .transport{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -92,7 +98,6 @@
   .status{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
   .sl-row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
   .sl-row .sl{min-width:0}
-  /* step sequencer */
   .steps{display:flex;gap:4px;flex-wrap:wrap;padding:10px;background:var(--screen);border-radius:8px;box-shadow:inset 0 3px 8px rgba(0,0,0,.6)}
   .stp{
     width:46px;height:56px;border-radius:6px;background:#37402F;border:1px solid #55654A;
@@ -109,11 +114,9 @@
   .stp .lk{position:absolute;top:2px;right:4px;font-size:8px;color:var(--amber)}
   .insp{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;padding:10px;background:var(--panel-hi);border-radius:8px}
   .insp.hidden{display:none}
-  .insp .sl label{color:var(--ink-soft)}
   .insp select, .insp input[type=number]{padding:5px 6px}
   .gen{border-top:1px solid var(--well-deep);margin-top:14px;padding-top:12px}
   .notice{font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--ink-soft);border-top:1px solid var(--well-deep);padding-top:12px}
-  /* timeline */
   .tl-track{display:flex;gap:6px;overflow-x:auto;padding:10px;background:var(--screen);border-radius:8px;box-shadow:inset 0 3px 8px rgba(0,0,0,.6);min-height:64px;align-items:center}
   .tl-empty{font-family:var(--mono);font-size:11px;color:#4A5546;padding:0 6px}
   .tl-item{
@@ -134,14 +137,21 @@
   @media (prefers-reduced-motion:reduce){.rec-btn.armed{animation:none;box-shadow:0 0 18px 4px rgba(232,68,46,.6)}}
 </style>
 </head>
-<body>
+<body class="simple">
 <div class="device">
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.4.1</small></h1>
+      <h1>CLIPDECK <small>v0.5</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
+
+    <div class="src-toggle" role="group" aria-label="UI mode">
+      <button id="modeSimple" class="on">Simple</button>
+      <button id="modeDeck">Deck</button>
+    </div>
+
+    <button class="mini" id="undoBtn" disabled title="Ctrl+Z">↩ Undo</button>
 
     <div class="src-toggle" role="group" aria-label="Audio source">
       <button id="srcDesktop" class="on">Desktop</button>
@@ -160,33 +170,56 @@
 
   <div class="main">
     <div class="well">
-      <div class="label">Clips <span id="clipCount">0</span>
+      <div class="label">Clips <span id="clipCount">0</span> <span id="storeInfo"></span>
         <button class="mini spacer" id="importBtn">Import</button>
       </div>
       <input type="file" id="importInput" accept="audio/*" multiple hidden>
       <div class="clips" id="clipList"></div>
+      <div class="proj">
+        <button class="mini" id="projSaveBtn">Save project</button>
+        <button class="mini" id="projLoadBtn">Load</button>
+        <input type="file" id="projInput" accept=".json,application/json" hidden>
+        <span>local only</span>
+      </div>
     </div>
 
     <div class="editor">
       <!-- EDITOR -->
       <div class="well">
         <div class="label">Editor <span id="clipTitle">—</span>
-          <button class="mini spacer" id="autoTrimBtn" title="Auto-trim new recordings">Auto-trim</button>
+          <button class="mini toggled spacer" id="autoTrimBtn" title="Auto-trim new recordings">Auto-trim</button>
         </div>
         <canvas id="wave" height="150"></canvas>
         <div class="transport" style="margin-top:12px">
           <button class="hbtn primary" id="playBtn" disabled>▶ Play</button>
           <button class="hbtn" id="stopBtn" disabled>■ Stop</button>
           <button class="hbtn" id="loopBtn" disabled>∞ Loop</button>
-          <button class="hbtn" id="revBtn" disabled>⇄ Reverse</button>
+          <button class="hbtn deck-only" id="revBtn" disabled>⇄ Reverse</button>
           <button class="hbtn" id="trimResetBtn" disabled>Reset trim</button>
           <button class="hbtn" id="commitBtn" disabled>Commit trim</button>
           <span class="trim-read" id="trimRead">drag the orange handles to trim</span>
         </div>
       </div>
 
-      <!-- SEQUENCER (pre-FX in the chain) -->
-      <div class="well">
+      <!-- SIMPLE MODE quick strip -->
+      <div class="well simple-only">
+        <div class="label">Quick effects</div>
+        <div class="sliders">
+          <div class="sl"><label>Speed <output id="oxRate">1.00×</output></label>
+            <input type="range" id="xRate" min="0.4" max="2.2" step="0.01" value="1"></div>
+          <div class="sl"><label>Reverb <output id="oxVerb">0%</output></label>
+            <input type="range" id="xVerb" min="0" max="1" step="0.01" value="0"></div>
+          <div class="sl"><label>Volume <output id="oxGain">100%</output></label>
+            <input type="range" id="xGain" min="0" max="2" step="0.01" value="1"></div>
+        </div>
+        <div class="fx-foot">
+          <button class="hbtn primary" id="exportBtnS" disabled>Export WAV</button>
+          <span class="status" id="statusS"></span>
+        </div>
+      </div>
+
+      <!-- SEQUENCER (deck) -->
+      <div class="well deck-only">
         <div class="label">Sequencer <span id="slHint">slices → steps → fx</span></div>
         <div class="sl-row">
           <div class="sl"><label>Grid</label>
@@ -210,6 +243,8 @@
             </select></div>
           <div class="sl"><label>Length</label>
             <input type="number" id="sLen" min="1" max="32" value="8"></div>
+          <div class="sl"><label>Swing <output id="oSwing">50%</output></label>
+            <input type="range" id="sSwing" min="50" max="75" step="1" value="50" style="width:110px"></div>
           <div class="sl"><label>Bounce loops</label>
             <select id="sPasses">
               <option value="1">1</option><option value="2" selected>2</option><option value="4">4</option>
@@ -268,8 +303,8 @@
         </div>
       </div>
 
-      <!-- EFFECTS -->
-      <div class="well">
+      <!-- EFFECTS (deck) -->
+      <div class="well deck-only">
         <div class="label">Effects <span>post-sequencer</span></div>
         <div class="presets">
           <button class="chip" data-c="amber" data-p="chipmunk">Chipmunk</button>
@@ -312,8 +347,8 @@
         </div>
       </div>
 
-      <!-- TIMELINE -->
-      <div class="well">
+      <!-- TIMELINE (deck) -->
+      <div class="well deck-only">
         <div class="label">Timeline <span id="tlTotal">0 items</span></div>
         <div class="tl-track" id="tlTrack"></div>
         <div class="tl-controls">
@@ -327,7 +362,7 @@
       </div>
 
       <div class="notice">
-        Desktop capture needs Chrome/Edge + “Share audio” in the picker. Everything persists in this browser (IndexedDB). Slices span the whole clip and don’t move when you trim — trim handles stick to slice edges, Roll only picks slices inside the trim, and Commit trim crops the clip so the grid re-spreads across what’s left (destructive until undo lands). Speed is pure character; step timing comes from BPM.
+        <b>Private by design:</b> recording, editing, and storage all happen in your browser — audio never leaves your machine. Desktop capture needs Chrome or Edge and the “Share audio” checkbox in the picker (tab share = tab audio; screen share = system audio on Windows). Clips persist in this browser; use Save project for a portable backup. Ctrl+Z undoes pattern edits, Commit trim, and clip deletes.
       </div>
     </div>
   </div>
@@ -345,6 +380,7 @@
   let trimA = 0, trimB = 0;
   let playing = null, mixPlaying = null;
   let reversed = false, looping = false, limiter = false, autoTrimOn = true, snapOn = true;
+  let uiMode = 'simple';
   let reverbIR = null;
   let idSeq = 1, uidSeq = 1;
   let timeline = [];
@@ -352,10 +388,11 @@
   const pitchCache = new Map();
   let selStep = -1;
   let tapTimes = [];
+  const undoStack = [];
 
   const $ = id => document.getElementById(id);
   const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0 };
-  const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, bpm:120, div:0.5, len:8 };
+  const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
   let seq = { on:false };
@@ -364,12 +401,72 @@
     const m = Math.floor(s/60), sec = (s%60);
     return String(m).padStart(2,'0') + ':' + sec.toFixed(1).padStart(4,'0');
   };
-  const setStatus = t => { $('status').textContent = t; };
+  const setStatus = t => { $('status').textContent = t; $('statusS').textContent = t; };
   const setSlStatus = t => { $('slStatus').textContent = t; };
   const setTlStatus = t => { $('tlStatus').textContent = t; };
   const nextFrame = () => new Promise(r => setTimeout(r, 20));
   // Step length in seconds. div is stored in beats (1/4→1, 1/8→0.5, 1/8T→1/3, 1/16→0.25, 1/16T→1/6).
   function STEP(){ return sset.div * (60 / sset.bpm); }
+  // Absolute step index → time offset from t0, with swing (50–75%) delaying odd steps within each pair.
+  function stepTimeOf(abs, t0, stepDur){
+    const sw = Math.min(0.75, Math.max(0.5, sset.swing/100));
+    return t0 + Math.floor(abs/2)*2*stepDur + (abs%2 ? 2*stepDur*sw : 0);
+  }
+
+  // ================= undo =================
+  function snapshotPattern(){ return pattern.map(p=>({...p})); }
+  function pushUndo(a){
+    undoStack.push(a);
+    if (undoStack.length > 20) undoStack.shift();
+    $('undoBtn').disabled = false;
+  }
+  function doUndo(){
+    const a = undoStack.pop();
+    if (!a){ $('undoBtn').disabled = true; return; }
+    if (a.type === 'pattern'){
+      pattern = a.data.map(p=>({...p}));
+      renderSteps(); renderInsp(); saveMeta();
+      setStatus('Undid pattern change.');
+    } else if (a.type === 'commit'){
+      const c = clips.find(x=>x.id===a.clipId);
+      if (c){
+        c.buffer = a.buffer; c.blob = a.blob; c.duration = a.duration;
+        analyzeClip(c);
+        pattern = a.pattern.map(p=>({...p}));
+        pitchCache.forEach((v,k)=>{ if (k.startsWith(c.id+'|')) pitchCache.delete(k); });
+        if (cur === c){ trimA = a.trimA; trimB = a.trimB; peaksCache = null; }
+        saveClipDB(c); saveMeta();
+        renderClips(); renderSteps(); drawWave(); updateTrimRead();
+        setStatus('Undid Commit trim.');
+      }
+    } else if (a.type === 'deleteClip'){
+      clips.splice(Math.min(a.index, clips.length), 0, a.clip);
+      a.tl.forEach(({item, index}) => timeline.splice(Math.min(index, timeline.length), 0, item));
+      saveClipDB(a.clip); saveMeta();
+      renderClips(); renderTimeline();
+      setStatus('Restored ' + a.clip.name + '.');
+    }
+    $('undoBtn').disabled = undoStack.length === 0;
+  }
+  $('undoBtn').onclick = doUndo;
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z'){
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      e.preventDefault();
+      doUndo();
+    }
+  });
+  const pushPatternUndo = () => pushUndo({type:'pattern', data:snapshotPattern()});
+
+  // ================= mode =================
+  function applyMode(){
+    document.body.classList.toggle('simple', uiMode === 'simple');
+    $('modeSimple').classList.toggle('on', uiMode === 'simple');
+    $('modeDeck').classList.toggle('on', uiMode === 'deck');
+  }
+  $('modeSimple').onclick = () => { uiMode = 'simple'; applyMode(); saveMeta(); };
+  $('modeDeck').onclick = () => { uiMode = 'deck'; applyMode(); saveMeta(); };
 
   // ================= IndexedDB =================
   let db = null;
@@ -393,11 +490,11 @@
     t.oncomplete = () => res(req ? req.result : null);
     t.onerror = () => rej(t.error);
   });
-  const saveClipDB = c => tx('clips','readwrite', s => s.put({id:c.id, name:c.name, blob:c.blob, createdAt:c.createdAt||Date.now()})).catch(()=>{});
-  const deleteClipDB = id => tx('clips','readwrite', s => s.delete(id)).catch(()=>{});
+  const saveClipDB = c => tx('clips','readwrite', s => s.put({id:c.id, name:c.name, blob:c.blob, createdAt:c.createdAt||Date.now()})).then(updateStoreInfo).catch(()=>{});
+  const deleteClipDB = id => tx('clips','readwrite', s => s.delete(id)).then(updateStoreInfo).catch(()=>{});
   const saveMeta = () => tx('meta','readwrite', s => {
     s.put(timeline, 'timeline');
-    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
+    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
   }).catch(()=>{});
   const getAll = store => new Promise((res) => {
     if (!db) return res([]);
@@ -413,10 +510,20 @@
     req.onsuccess = () => res(req.result ?? null);
     req.onerror = () => res(null);
   });
+  async function updateStoreInfo(){
+    try{
+      if (!navigator.storage || !navigator.storage.estimate) return;
+      const est = await navigator.storage.estimate();
+      if (est.usage != null) $('storeInfo').textContent = '· ' + (est.usage/1048576).toFixed(1) + ' MB';
+    }catch(e){}
+  }
 
   async function restore(){
+    // ask the browser not to evict our storage under pressure
+    try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+    let hadState = false;
     try{ db = await openDB(); }
-    catch(e){ setStatus('Storage unavailable — clips won’t persist here.'); renderClips(); renderTimeline(); renderSteps(); return; }
+    catch(e){ setStatus('Storage unavailable — clips won’t persist here.'); applyMode(); renderClips(); renderTimeline(); renderSteps(); return; }
     try{
       const saved = await getAll('clips');
       saved.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
@@ -430,12 +537,14 @@
       }
       const state = await getMeta('state');
       if (state){
+        hadState = true;
         idSeq = state.idSeq || (Math.max(0,...clips.map(c=>c.id))+1);
         uidSeq = state.uidSeq || 1;
         crossfade = state.crossfade || 0;
         limiter = !!state.limiter;
         autoTrimOn = state.autoTrimOn !== false;
         snapOn = state.snapOn !== false;
+        uiMode = state.uiMode || 'deck'; // pre-v0.5 users were already in the deep end
         if (state.sset) Object.assign(sset, state.sset);
         if (Array.isArray(state.pattern)) pattern = pattern.map((p,i)=> state.pattern[i] ? {...defaultStep(i), ...state.pattern[i]} : p);
         $('fCross').value = crossfade; $('oCross').textContent = crossfade.toFixed(1)+'s';
@@ -450,10 +559,13 @@
       if (Array.isArray(tl)) timeline = tl.filter(it => clips.some(c=>c.id===it.clipId));
       if (clips.length) setStatus('Restored ' + clips.length + ' clip' + (clips.length>1?'s':'') + '.');
     }catch(e){}
+    if (!hadState) uiMode = 'simple';
+    applyMode();
     renderClips(); renderTimeline(); renderSteps();
+    updateStoreInfo();
   }
 
-  // ================= analysis: envelope, auto-trim, onsets, BPM =================
+  // ================= analysis =================
   function analyzeClip(clip){
     const buf = clip.buffer, sr = buf.sampleRate, d = buf.getChannelData(0);
     const hop = 512, win = 1024;
@@ -477,7 +589,6 @@
       a: Math.max(0, a*hop/sr - pad),
       b: Math.min(buf.duration, (b*hop+win)/sr + pad)
     };
-    // onsets: positive energy flux, adaptive threshold, min separation 50ms
     const flux = new Float32Array(n);
     for (let i=1;i<n;i++) flux[i] = Math.max(0, env[i]-env[i-1]);
     let mean = 0; for (let i=0;i<n;i++) mean += flux[i]; mean /= n;
@@ -493,7 +604,6 @@
       }
     }
     clip.onsets = onsets;
-    // BPM estimate from inter-onset intervals
     clip.bpmEst = null;
     if (onsets.length >= 4){
       const iois = [];
@@ -511,8 +621,6 @@
     }
   }
 
-  // slice boundaries span the FULL clip (slices are a property of the clip, not the trim).
-  // Equal grid, optionally snapped to onsets within ±15% of a slice.
   function sliceBoundaries(){
     const N = sset.grid;
     const dur = cur ? cur.duration : 1;
@@ -532,7 +640,6 @@
     }
     return b;
   }
-  // slices whose midpoint falls inside the trim — the pool Roll and sequential fills draw from
   function slicePool(){
     const N = sset.grid;
     if (!cur) return Array.from({length:N}, (_,i)=>i);
@@ -706,7 +813,13 @@
   });
 
   // ================= recording =================
-  $('srcDesktop').onclick = () => setSource('desktop');
+  $('srcDesktop').onclick = () => {
+    if ($('srcDesktop').classList.contains('unavail')){
+      setStatus('Desktop capture needs Chrome or Edge — the mic still works here.');
+      return;
+    }
+    setSource('desktop');
+  };
   $('srcMic').onclick = () => setSource('mic');
   function setSource(s){
     source = s;
@@ -720,7 +833,7 @@
         mediaStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
         if (mediaStream.getAudioTracks().length === 0){
           mediaStream.getTracks().forEach(t=>t.stop());
-          setStatus('No audio in that share — re-pick and check “Share audio”.');
+          setStatus('That share had no audio — hit REC again and tick “Also share tab audio” at the bottom of the picker.');
           return;
         }
         mediaStream.getVideoTracks().forEach(t=>t.stop());
@@ -729,7 +842,9 @@
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false } });
       }
     }catch(e){
-      setStatus('Capture blocked: ' + e.name + '. Serve over HTTPS in Chrome/Edge.');
+      setStatus(e.name === 'NotAllowedError'
+        ? 'Permission denied — allow capture in the browser prompt (or check the camera icon in the address bar).'
+        : 'Capture blocked: ' + e.name + '. Use Chrome or Edge over HTTPS.');
       return;
     }
     await ctx.resume();
@@ -743,7 +858,7 @@
     recStart = performance.now();
     $('recBtn').classList.add('armed');
     $('recLed').classList.add('on');
-    setStatus('Recording ' + (source==='desktop'?'desktop':'mic') + '…');
+    setStatus('Recording ' + (source==='desktop'?'desktop':'mic') + '… hit REC again to stop.');
     recTimer = setInterval(()=>{ $('recTime').textContent = fmt((performance.now()-recStart)/1000); }, 100);
     const an = ctx.createAnalyser(); an.fftSize = 512;
     ctx.createMediaStreamSource(mediaStream).connect(an);
@@ -804,6 +919,85 @@
     catch(e){ setStatus('Couldn’t decode ' + f.name); }
   }
 
+  // ================= project save / load =================
+  const blobToB64 = blob => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = () => rej(new Error('read failed'));
+    r.readAsDataURL(blob);
+  });
+  const b64ToBlob = (b64, mime) => {
+    const bin = atob(b64);
+    const u8 = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], {type: mime || 'application/octet-stream'});
+  };
+  $('projSaveBtn').onclick = async () => {
+    if (!clips.length){ setStatus('Nothing to save yet.'); return; }
+    setStatus('Packing project…');
+    const out = [];
+    for (const c of clips){
+      out.push({ id:c.id, name:c.name, createdAt:c.createdAt, mime:c.blob.type, data: await blobToB64(c.blob) });
+    }
+    const proj = {
+      app:'clipdeck', version:5,
+      state:{ sset:{...sset}, pattern:pattern.map(p=>({...p})), timeline, crossfade, limiter, autoTrimOn, snapOn, uiMode, idSeq, uidSeq },
+      clips: out
+    };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(proj)], {type:'application/json'}));
+    a.download = 'clipdeck_project_' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    setStatus('Project saved (' + clips.length + ' clips).');
+  };
+  $('projLoadBtn').onclick = () => $('projInput').click();
+  $('projInput').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    let proj;
+    try{ proj = JSON.parse(await f.text()); }
+    catch(err){ setStatus('That file isn’t a CLIPDECK project.'); return; }
+    if (!proj || proj.app !== 'clipdeck' || !Array.isArray(proj.clips)){ setStatus('That file isn’t a CLIPDECK project.'); return; }
+    if (clips.length && !confirm('Load project? This replaces your current clips and pattern.')) return;
+    stopPlayback(); stopSeq(); stopMix();
+    setStatus('Loading project…');
+    for (const c of clips) deleteClipDB(c.id);
+    clips = []; timeline = []; cur = null; undoStack.length = 0; $('undoBtn').disabled = true;
+    const st = proj.state || {};
+    if (st.sset) Object.assign(sset, st.sset);
+    if (Array.isArray(st.pattern)) pattern = pattern.map((p,i)=> st.pattern[i] ? {...defaultStep(i), ...st.pattern[i]} : defaultStep(i));
+    crossfade = st.crossfade || 0;
+    limiter = !!st.limiter;
+    autoTrimOn = st.autoTrimOn !== false;
+    snapOn = st.snapOn !== false;
+    uiMode = st.uiMode || uiMode;
+    idSeq = st.idSeq || 1;
+    uidSeq = st.uidSeq || 1;
+    timeline = Array.isArray(st.timeline) ? st.timeline : [];
+    for (const pc of proj.clips){
+      try{
+        const blob = b64ToBlob(pc.data, pc.mime);
+        const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+        const c = {id:pc.id, name:pc.name, buffer:buf, duration:buf.duration, blob, createdAt:pc.createdAt||Date.now()};
+        analyzeClip(c);
+        clips.push(c);
+        saveClipDB(c);
+      }catch(err){}
+    }
+    timeline = timeline.filter(it => clips.some(c=>c.id===it.clipId));
+    $('fCross').value = crossfade; $('oCross').textContent = crossfade.toFixed(1)+'s';
+    $('limitBtn').classList.toggle('toggled', limiter);
+    $('autoTrimBtn').classList.toggle('toggled', autoTrimOn);
+    $('snapBtn').classList.toggle('toggled', snapOn);
+    syncSeqControls(); applyMode();
+    saveMeta();
+    $('clipTitle').textContent='—'; drawWave(); updateButtons();
+    renderClips(); renderTimeline(); renderSteps(); renderInsp();
+    setStatus('Project loaded — ' + clips.length + ' clips.');
+  });
+
   // ================= clips shelf =================
   function renderClips(){
     const list = $('clipList');
@@ -812,7 +1006,7 @@
     if (!clips.length){
       const d = document.createElement('div');
       d.className='empty';
-      d.innerHTML='No clips yet.<br><br>Hit REC, or Import / drop an audio file here.';
+      d.innerHTML = 'No clips yet.<br><br>Pick Desktop or Mic up top and hit <b>REC</b>. For desktop audio, choose a tab in the picker and tick <b>“Also share tab audio”</b>.<br><br>Or Import / drop an audio file here.';
       list.appendChild(d); return;
     }
     for (const c of clips){
@@ -830,11 +1024,15 @@
       });
       el.querySelector('.name').addEventListener('keydown', ev => { if (ev.key==='Enter'){ ev.preventDefault(); ev.target.blur(); } });
       el.querySelector('.del').onclick = () => {
+        const index = clips.indexOf(c);
+        const tl = timeline.map((item,i)=>({item,index:i})).filter(x=>x.item.clipId===c.id);
+        pushUndo({type:'deleteClip', clip:c, index, tl});
         clips = clips.filter(x=>x!==c);
         timeline = timeline.filter(it => it.clipId!==c.id);
         deleteClipDB(c.id); saveMeta();
         if (cur===c){ stopPlayback(); stopSeq(); cur=null; $('clipTitle').textContent='—'; drawWave(); updateButtons(); }
         renderClips(); renderTimeline();
+        setStatus('Deleted ' + c.name + ' — Ctrl+Z to undo.');
       };
       list.appendChild(el);
     }
@@ -853,7 +1051,7 @@
   }
   function updateButtons(){
     const on = !!cur;
-    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','commitBtn','revBtn','exportBtn','addTlBtn','patBtn','patStopBtn','bounceBtn']) $(id).disabled = !on;
+    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','commitBtn','revBtn','exportBtn','exportBtnS','addTlBtn','patBtn','patStopBtn','bounceBtn']) $(id).disabled = !on;
   }
 
   // ================= waveform + trim =================
@@ -874,10 +1072,10 @@
     if (canvas.width !== w*devicePixelRatio){ canvas.width = w*devicePixelRatio; g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
     g.clearRect(0,0,w,h);
     g.fillStyle = '#20241F'; g.fillRect(0,0,w,h);
-    if (!cur){ g.fillStyle='#4A5546'; g.font='11px ui-monospace,monospace'; g.fillText('no clip loaded', 14, h/2); peaksCache=null; return; }
-    if (!peaksCache || peaksCache.w !== w || peaksCache.id !== cur.id || peaksCache.rev !== reversed){
+    if (!cur){ g.fillStyle='#4A5546'; g.font='11px ui-monospace,monospace'; g.fillText('no clip loaded — hit REC to start', 14, h/2); peaksCache=null; return; }
+    if (!peaksCache || peaksCache.w !== w || peaksCache.id !== cur.id || peaksCache.rev !== reversed || peaksCache.len !== cur.buffer.length){
       const buf = reversed ? reverseBuffer(cur.buffer) : cur.buffer;
-      peaksCache = { w, id:cur.id, rev:reversed, data:computePeaks(buf, w) };
+      peaksCache = { w, id:cur.id, rev:reversed, len:cur.buffer.length, data:computePeaks(buf, w) };
     }
     const dur = cur.duration, ax = trimA/dur*w, bx = trimB/dur*w;
     for (let x=0;x<w;x++){
@@ -886,7 +1084,6 @@
       g.fillRect(x, h/2-p, 1, Math.max(2, p*2));
     }
     g.fillStyle = 'rgba(255,138,30,.14)'; g.fillRect(ax,0,bx-ax,h);
-    // onset ticks (not reversed view — analysis is on forward audio)
     if (!reversed && cur.onsets){
       g.fillStyle = 'rgba(184,240,168,.6)';
       for (const o of cur.onsets){
@@ -894,7 +1091,6 @@
         g.fillRect(x, 0, 1, 7);
       }
     }
-    // slice boundaries (snapped)
     const b = sliceBoundaries();
     const N = sset.grid;
     if (activeSlice != null && activeSlice >= 0 && activeSlice < N){
@@ -902,8 +1098,10 @@
       g.fillStyle = 'rgba(255,138,30,.35)';
       g.fillRect(x0, 0, x1-x0, h);
     }
-    g.fillStyle = 'rgba(184,240,168,.25)';
-    for (let i=1;i<N;i++) g.fillRect(b[i]/dur*w, 0, 1, h);
+    if (uiMode === 'deck'){
+      g.fillStyle = 'rgba(184,240,168,.25)';
+      for (let i=1;i<N;i++) g.fillRect(b[i]/dur*w, 0, 1, h);
+    }
     for (const x of [ax,bx]){
       g.fillStyle = '#FF8A1E'; g.fillRect(x-2,0,4,h);
       g.fillRect(x-7,h/2-14,14,28);
@@ -934,8 +1132,7 @@
     dragging = null;
   });
   function moveTrim(s){
-    // magnetic snap to slice boundaries ("trim tries to stick to the slice count")
-    if (cur){
+    if (cur && uiMode === 'deck'){
       const b = sliceBoundaries();
       const magnet = 10 / canvas.clientWidth * cur.duration;
       for (const edge of b){
@@ -959,7 +1156,7 @@
     const s0 = Math.floor(trimA*sr), s1 = Math.min(buf.length, Math.ceil(trimB*sr));
     const len = s1 - s0;
     if (len < sr*0.05){ setStatus('Trim too short to commit.'); return; }
-    // remap pattern slices: old in-trim pool re-spreads across the new full-width grid
+    pushUndo({type:'commit', clipId:cur.id, buffer:buf, blob:cur.blob, duration:cur.duration, trimA, trimB, pattern:snapshotPattern()});
     const pool = slicePool();
     const N = sset.grid;
     pattern.forEach(st => {
@@ -980,7 +1177,7 @@
     peaksCache = null;
     saveClipDB(cur); saveMeta();
     renderClips(); renderSteps(); drawWave(); updateTrimRead();
-    setStatus('Committed — grid re-spread over ' + fmt(cur.duration) + '.');
+    setStatus('Committed — Ctrl+Z to undo.');
   };
   $('autoTrimBtn').onclick = () => {
     autoTrimOn = !autoTrimOn;
@@ -999,6 +1196,7 @@
     $(id).addEventListener('input', e => {
       fx[key] = parseFloat(e.target.value);
       $(out).textContent = fmtFn(fx[key]);
+      syncSimple();
       restartIfPlaying();
     });
   };
@@ -1013,6 +1211,23 @@
   bind('fFadeOut','fadeOut','oFadeOut', v=>v.toFixed(1)+'s');
   bind('fGain','gain','oGain', v=>Math.round(v*100)+'%');
   $('fType').addEventListener('change', e => { fx.type = e.target.value; restartIfPlaying(); });
+  // simple-mode strip (same fx object, second set of controls)
+  const sbindX = (id, key, out, fmtFn) => {
+    $(id).addEventListener('input', e => {
+      fx[key] = parseFloat(e.target.value);
+      $(out).textContent = fmtFn(fx[key]);
+      syncControls();
+      restartIfPlaying();
+    });
+  };
+  sbindX('xRate','rate','oxRate', v=>v.toFixed(2)+'×');
+  sbindX('xVerb','verb','oxVerb', v=>Math.round(v*100)+'%');
+  sbindX('xGain','gain','oxGain', v=>Math.round(v*100)+'%');
+  function syncSimple(){
+    $('xRate').value = fx.rate; $('oxRate').textContent = fx.rate.toFixed(2)+'×';
+    $('xVerb').value = fx.verb; $('oxVerb').textContent = Math.round(fx.verb*100)+'%';
+    $('xGain').value = fx.gain; $('oxGain').textContent = Math.round(fx.gain*100)+'%';
+  }
   const presets = {
     chipmunk:{rate:1.6}, deep:{rate:0.62},
     phone:{type:'bandpass', freq:0.58, crunch:0.25},
@@ -1023,7 +1238,7 @@
   const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0};
   document.querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
     Object.assign(fx, FX_DEFAULT, presets[ch.dataset.p]);
-    syncControls(); restartIfPlaying();
+    syncControls(); syncSimple(); restartIfPlaying();
   });
   function syncControls(){
     $('fRate').value=fx.rate; $('oRate').textContent=fx.rate.toFixed(2)+'×';
@@ -1121,21 +1336,21 @@
     const p = parseInt(cond, 10)/100;
     return hash01(loop*131 + stepIdx, 9) < p;
   }
-  // schedule one step's audio into any context
-  function scheduleStep(c, destInput, bufN, bufR, st, stepIdx, loop, tAbs, bounds, stepDur){
+  // span = actual time until the next step (varies under swing)
+  function scheduleStep(c, destInput, bufN, bufR, st, tAbs, span, bounds){
     const N = sset.grid;
     const idx = Math.min(st.slice, N-1);
     const sliceStart = bounds[idx], sliceLen = bounds[idx+1]-bounds[idx];
     const hitRate = Math.max(0.05, fx.rate * Math.pow(2, st.pitch/12));
     const n = st.retrig;
     for (let k=0;k<n;k++){
-      const t = tAbs + k*stepDur/n;
+      const t = tAbs + k*span/n;
       const src = c.createBufferSource();
       src.buffer = st.rev ? bufR : bufN;
       const off = st.rev ? Math.max(0, src.buffer.duration - (sliceStart + sliceLen)) : sliceStart;
       let contentSecs;
       if (st.gate === 'ring') contentSecs = sliceLen;
-      else contentSecs = Math.min(sliceLen, (stepDur/n) * hitRate);
+      else contentSecs = Math.min(sliceLen, (span/n) * hitRate);
       const realDur = contentSecs / hitRate;
       src.playbackRate.value = hitRate;
       const gn = c.createGain();
@@ -1155,7 +1370,7 @@
     await ctx.resume();
     const bounds = sliceBoundaries();
     const minSlice = Math.min(...bounds.slice(1).map((b2,i)=>b2-bounds[i]));
-    if (minSlice < 0.02){ setSlStatus('Slices too short — widen trim or lower grid.'); return; }
+    if (minSlice < 0.02){ setSlStatus('Slices too short — lower the grid.'); return; }
     const bufN = await getSourceBuffer(cur, false, fx.pitch);
     const bufR = await getSourceBuffer(cur, true, fx.pitch);
     if (!cur) return;
@@ -1164,33 +1379,36 @@
     if (limiter){ const comp = makeLimiter(ctx); chain.out.connect(comp); tailNode = comp; }
     tailNode.connect(ctx.destination);
     const stepDur = STEP();
-    seq = { on:true, abs:0, nextTime:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], chain, tailNode, stepDur, bounds };
+    seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], chain, tailNode, stepDur, bounds };
     const tick = () => {
-      while (seq.on && seq.nextTime < ctx.currentTime + 0.15){
+      while (seq.on){
+        const t = stepTimeOf(seq.abs, seq.t0, stepDur);
+        if (t >= ctx.currentTime + 0.15) break;
+        const tNext = stepTimeOf(seq.abs+1, seq.t0, stepDur);
+        const span = tNext - t;
         const len = sset.len;
         const stepIdx = seq.abs % len;
         const loop = Math.floor(seq.abs / len);
         const st = pattern[stepIdx];
         let fired = -1;
         if (st.on && condPass(st.cond, loop, stepIdx)){
-          scheduleStep(ctx, chain.input, bufN, bufR, st, stepIdx, loop, seq.nextTime, bounds, stepDur);
+          scheduleStep(ctx, chain.input, bufN, bufR, st, t, span, bounds);
           fired = Math.min(st.slice, sset.grid-1);
         }
-        seq.hits.push({t:seq.nextTime, stepIdx, sliceIdx:fired});
+        seq.hits.push({t, span, stepIdx, sliceIdx:fired});
         if (seq.hits.length > 96) seq.hits.shift();
-        seq.nextTime += stepDur;
         seq.abs++;
       }
     };
     tick();
     seq.timer = setInterval(tick, 25);
     $('patBtn').classList.add('toggled');
-    setSlStatus(sset.bpm + ' BPM · ' + sset.len + ' steps · seed ' + sset.seed);
+    setSlStatus(sset.bpm + ' BPM · ' + sset.len + ' steps · seed ' + sset.seed + (sset.swing>50 ? ' · swing '+sset.swing+'%' : ''));
     const anim = () => {
       if (!seq.on) return;
       const now = ctx.currentTime;
       let activeStep = -1, activeSlice = -1;
-      for (const h of seq.hits) if (now >= h.t && now < h.t + seq.stepDur){ activeStep = h.stepIdx; activeSlice = h.sliceIdx; break; }
+      for (const h of seq.hits) if (now >= h.t && now < h.t + h.span){ activeStep = h.stepIdx; activeSlice = h.sliceIdx; break; }
       drawWave(null, activeSlice);
       markPlayingStep(activeStep);
       seq.rafId = requestAnimationFrame(anim);
@@ -1229,9 +1447,9 @@
         <span class="n">${st.on ? st.slice+1 : '·'}</span>
         <span class="tags">${tags.join(' ')}</span>`;
       el.addEventListener('click', () => { selStep = (selStep===i ? -1 : i); renderSteps(); renderInsp(); });
-      el.addEventListener('contextmenu', e => { e.preventDefault(); toggleStep(i); });
+      el.addEventListener('contextmenu', e => { e.preventDefault(); pushPatternUndo(); toggleStep(i); });
       el.addEventListener('pointerdown', () => {
-        longPressTimer = setTimeout(()=>{ toggleStep(i); longPressTimer=null; }, 480);
+        longPressTimer = setTimeout(()=>{ pushPatternUndo(); toggleStep(i); longPressTimer=null; }, 480);
       });
       el.addEventListener('pointerup', () => { if (longPressTimer){ clearTimeout(longPressTimer); longPressTimer=null; } });
       el.addEventListener('pointerleave', () => { if (longPressTimer){ clearTimeout(longPressTimer); longPressTimer=null; } });
@@ -1270,17 +1488,19 @@
     $('iRev').classList.toggle('toggled', st.rev);
     $('iLock').classList.toggle('toggled', st.locked);
   }
-  $('iOn').onclick = () => { if(selStep<0)return; pattern[selStep].on = !pattern[selStep].on; renderSteps(); renderInsp(); saveMeta(); };
-  $('iSlice').addEventListener('change', e => { if(selStep<0)return; pattern[selStep].slice = parseInt(e.target.value,10); renderSteps(); saveMeta(); });
-  $('iRetrig').addEventListener('change', e => { if(selStep<0)return; pattern[selStep].retrig = parseInt(e.target.value,10); renderSteps(); saveMeta(); });
-  $('iCond').addEventListener('change', e => { if(selStep<0)return; pattern[selStep].cond = e.target.value; renderSteps(); saveMeta(); });
-  $('iGate').addEventListener('change', e => { if(selStep<0)return; pattern[selStep].gate = e.target.value; renderSteps(); saveMeta(); });
-  $('iPitch').addEventListener('change', e => { if(selStep<0)return; pattern[selStep].pitch = Math.max(-12, Math.min(12, parseInt(e.target.value,10)||0)); e.target.value = pattern[selStep].pitch; renderSteps(); saveMeta(); });
-  $('iRev').onclick = () => { if(selStep<0)return; pattern[selStep].rev = !pattern[selStep].rev; renderSteps(); renderInsp(); saveMeta(); };
+  const stepEdit = fn => { if (selStep<0) return; pushPatternUndo(); fn(pattern[selStep]); renderSteps(); renderInsp(); saveMeta(); };
+  $('iOn').onclick = () => stepEdit(st => st.on = !st.on);
+  $('iSlice').addEventListener('change', e => stepEdit(st => st.slice = parseInt(e.target.value,10)));
+  $('iRetrig').addEventListener('change', e => stepEdit(st => st.retrig = parseInt(e.target.value,10)));
+  $('iCond').addEventListener('change', e => stepEdit(st => st.cond = e.target.value));
+  $('iGate').addEventListener('change', e => stepEdit(st => st.gate = e.target.value));
+  $('iPitch').addEventListener('change', e => stepEdit(st => { st.pitch = Math.max(-12, Math.min(12, parseInt(e.target.value,10)||0)); e.target.value = st.pitch; }));
+  $('iRev').onclick = () => stepEdit(st => st.rev = !st.rev);
   $('iLock').onclick = () => { if(selStep<0)return; pattern[selStep].locked = !pattern[selStep].locked; renderSteps(); renderInsp(); saveMeta(); };
 
   // ---- roll generator ----
   function roll(){
+    pushPatternUndo();
     const pool = slicePool();
     const P = k => Math.min(1, sset[k]*sset.chaos);
     for (let i=0;i<32;i++){
@@ -1321,7 +1541,14 @@
   sbind('sStut','stutter','oStut', v=>Math.round(v*100)+'%');
   sbind('sRest','rest','oRest', v=>Math.round(v*100)+'%');
   sbind('sJit','jitter','oJit', v=>'±'+v+' st');
+  $('sSwing').addEventListener('input', e => {
+    sset.swing = parseInt(e.target.value, 10);
+    $('oSwing').textContent = sset.swing + '%';
+    saveMeta();
+  });
+  $('sSwing').addEventListener('change', () => { if (seq.on) startSeq(); });
   $('sGrid').addEventListener('change', e => {
+    pushPatternUndo();
     sset.grid = parseInt(e.target.value, 10);
     pattern.forEach(st => { st.slice = Math.min(st.slice, sset.grid-1); });
     saveMeta(); drawWave(); renderSteps(); renderInsp();
@@ -1378,6 +1605,7 @@
     $('sBpm').value = sset.bpm;
     $('sDiv').value = String(sset.div);
     $('sLen').value = sset.len;
+    $('sSwing').value = sset.swing; $('oSwing').textContent = sset.swing + '%';
     $('sPasses').value = String(sset.passes);
     $('sChaos').value = sset.chaos; $('oChaos').textContent = Math.round(sset.chaos*100)+'%';
     $('sShuf').value = sset.shuffle; $('oShuf').textContent = Math.round(sset.shuffle*100)+'%';
@@ -1399,7 +1627,8 @@
     const stepDur = STEP();
     const steps = sset.len * sset.passes;
     const tail = (fx.verb>0.01?2.4:0) + (fx.delay>0.01?1.5:0) + 0.3;
-    const oc = new OfflineAudioContext(2, Math.ceil((steps*stepDur + tail + 0.05) * MIX_SR), MIX_SR);
+    const totalDur = stepTimeOf(steps, 0.02, stepDur) + tail;
+    const oc = new OfflineAudioContext(2, Math.ceil(totalDur * MIX_SR), MIX_SR);
     const chain = buildChain(oc, fx);
     let tailNode = chain.out;
     if (limiter){ const comp = makeLimiter(oc); chain.out.connect(comp); tailNode = comp; }
@@ -1409,7 +1638,9 @@
       const loop = Math.floor(abs / sset.len);
       const st = pattern[stepIdx];
       if (st.on && condPass(st.cond, loop, stepIdx)){
-        scheduleStep(oc, chain.input, bufN, bufR, st, stepIdx, loop, 0.02 + abs*stepDur, bounds, stepDur);
+        const t = stepTimeOf(abs, 0.02, stepDur);
+        const span = stepTimeOf(abs+1, 0.02, stepDur) - t;
+        scheduleStep(oc, chain.input, bufN, bufR, st, t, span, bounds);
       }
     }
     const rendered = await oc.startRendering();
@@ -1419,7 +1650,7 @@
   };
 
   // ================= clip export =================
-  $('exportBtn').onclick = async () => {
+  async function exportCurrent(){
     if (!cur) return;
     setStatus('Rendering…');
     const item = { clipId:cur.id, trimA, trimB, reversed, fx:{...fx} };
@@ -1427,7 +1658,9 @@
     if (!r){ setStatus('Render failed.'); return; }
     downloadWav(r.buffer, cur.name);
     setStatus('Exported.');
-  };
+  }
+  $('exportBtn').onclick = exportCurrent;
+  $('exportBtnS').onclick = exportCurrent;
   function downloadWav(buffer, name){
     const wav = encodeWav(buffer);
     const a = document.createElement('a');
@@ -1589,7 +1822,15 @@
 
   // ================= init =================
   window.addEventListener('resize', () => { peaksCache=null; drawWave(); });
+  // browser capability gate
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    $('srcDesktop').classList.add('unavail');
+    $('srcDesktop').classList.remove('on');
+    setSource('mic');
+    setStatus('Desktop capture isn’t supported in this browser — mic recording still works. For desktop audio, use Chrome or Edge.');
+  }
   syncSeqControls();
+  syncSimple();
   renderSteps();
   drawWave();
   restore();
