@@ -142,7 +142,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.5</small></h1>
+      <h1>CLIPDECK <small>v0.5.2</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -273,6 +273,15 @@
         </div>
 
         <div class="gen">
+          <div class="label">Pattern starters — genre skeletons cast onto your slices</div>
+          <div class="presets">
+            <button class="chip" data-c="red" data-pp="trap">Trap</button>
+            <button class="chip" data-c="blue" data-pp="dnb">DnB</button>
+            <button class="chip" data-c="green" data-pp="house">House</button>
+            <button class="chip" data-c="amber" data-pp="boombap">Boom bap</button>
+            <button class="chip" data-c="blue" data-pp="halftime">Halftime</button>
+            <button class="chip" data-pp="straight">Straight</button>
+          </div>
           <div class="label">Roll — writes unlocked steps</div>
           <div class="sliders">
             <div class="sl"><label>Chaos <output id="oChaos">100%</output></label>
@@ -1236,7 +1245,7 @@
     clean:{}
   };
   const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0};
-  document.querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
+  document.querySelectorAll('.chip[data-p]').forEach(ch => ch.onclick = () => {
     Object.assign(fx, FX_DEFAULT, presets[ch.dataset.p]);
     syncControls(); syncSimple(); restartIfPlaying();
   });
@@ -1527,6 +1536,82 @@
     roll();
   };
 
+  // ---- pattern starters (genre skeletons) ----
+  // Tokens: K anchor(loudest slice) · S accent(2nd loudest) · h filler · ? filler@25% · r retrig×2
+  // R retrig×4 · Q retrig×8@50% · O filler ring (open-hat feel) · V filler ring+reversed · . rest
+  const PATTERN_PRESETS = {
+    trap:     {bpm:140, div:0.25, len:16, swing:54,
+               steps:['K','h','h','.','h','h','K','.','S','h','h','R','h','?','h','Q']},
+    dnb:      {bpm:174, div:0.25, len:16, swing:50,
+               steps:['K','h','.','h','S','.','h','?','h','.','K','h','S','.','h','r']},
+    house:    {bpm:124, div:0.25, len:16, swing:50,
+               steps:['K','.','O','.','K','.','O','?','K','.','O','.','K','.','O','?']},
+    boombap:  {bpm:92,  div:0.25, len:16, swing:58,
+               steps:['K','.','h','.','S','.','h','K','.','K','h','.','S','.','?','.']},
+    halftime: {bpm:145, div:0.25, len:16, swing:52,
+               steps:['K','.','.','.','?','.','h','.','S','.','.','r','.','.','.','V']}
+  };
+  // rank in-trim slices by mean energy — loudest becomes the "kick", second the "snare"
+  function rankPoolByEnergy(pool){
+    if (!cur) return pool.slice();
+    const b = sliceBoundaries();
+    const d = cur.buffer.getChannelData(0), sr = cur.buffer.sampleRate;
+    const scored = pool.map(i => {
+      let s = 0, c = 0;
+      const st = Math.floor(b[i]*sr), en = Math.min(d.length, Math.floor(b[i+1]*sr));
+      for (let j=st; j<en; j+=8){ s += Math.abs(d[j]); c++; }
+      return { i, v: c ? s/c : 0 };
+    });
+    scored.sort((a,b2)=>b2.v-a.v);
+    return scored.map(x=>x.i);
+  }
+  function applyPatternPreset(name){
+    pushPatternUndo();
+    if (name === 'straight'){
+      const pool = slicePool();
+      for (let i=0;i<32;i++){
+        if (pattern[i].locked) continue;
+        pattern[i] = { ...defaultStep(i), slice: pool[i % pool.length], locked:false };
+      }
+      renderSteps(); renderInsp(); saveMeta();
+      setSlStatus('Straight — sequential slices, everything on.');
+      if (seq.on) startSeq();
+      return;
+    }
+    const p = PATTERN_PRESETS[name];
+    if (!p) return;
+    sset.bpm = p.bpm; sset.div = p.div; sset.len = p.len; sset.swing = p.swing;
+    const ranked = rankPoolByEnergy(slicePool());
+    const K = ranked[0] ?? 0;
+    const S = ranked[1] ?? K;
+    const fillers = ranked.length > 2 ? ranked.slice(2) : ranked;
+    for (let i=0;i<32;i++){
+      if (pattern[i].locked) continue;
+      const tk = p.steps[i % p.steps.length];
+      const st = defaultStep(i);
+      st.locked = false;
+      const filler = fillers[Math.floor(hash01(i,20)*fillers.length)];
+      switch (tk){
+        case 'K': st.slice = K; break;
+        case 'S': st.slice = S; break;
+        case 'h': st.slice = filler; break;
+        case '?': st.slice = filler; st.cond = '25'; break;
+        case 'r': st.slice = filler; st.retrig = 2; break;
+        case 'R': st.slice = filler; st.retrig = 4; break;
+        case 'Q': st.slice = filler; st.retrig = 8; st.cond = '50'; break;
+        case 'O': st.slice = filler; st.gate = 'ring'; break;
+        case 'V': st.slice = filler; st.gate = 'ring'; st.rev = true; break;
+        default:  st.on = false;
+      }
+      pattern[i] = st;
+    }
+    if (selStep >= sset.len) selStep = -1;
+    syncSeqControls(); renderSteps(); renderInsp(); saveMeta(); drawWave();
+    setSlStatus(name.charAt(0).toUpperCase()+name.slice(1) + ' starter · ' + p.bpm + ' BPM · loudest slice on the kicks.');
+    if (seq.on) startSeq();
+  }
+  document.querySelectorAll('.chip[data-pp]').forEach(ch => ch.onclick = () => applyPatternPreset(ch.dataset.pp));
+
   // ---- seq controls ----
   const sbind = (id, key, out, fmtFn) => {
     $(id).addEventListener('input', e => {
@@ -1646,7 +1731,10 @@
     const rendered = await oc.startRendering();
     const blob = new Blob([encodeWav(rendered)], {type:'audio/wav'});
     addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed, false);
-    setSlStatus('Bounced → shelf.');
+    // the FX are printed into the bounce — reset the live chain so playback isn't double-processed
+    Object.assign(fx, FX_DEFAULT);
+    syncControls(); syncSimple();
+    setSlStatus('Bounced → shelf · FX printed, chain reset.');
   };
 
   // ================= clip export =================
