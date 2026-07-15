@@ -68,6 +68,7 @@
   .hbtn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--well-deep)}
   .hbtn.primary{background:var(--ink);color:#fff;box-shadow:0 3px 0 #000, 0 4px 6px rgba(0,0,0,.3)}
   .hbtn.toggled{background:var(--blue);color:#fff;box-shadow:0 3px 0 #1B449E}
+  .hbtn.hot{background:var(--amber);color:var(--ink);box-shadow:0 3px 0 #B65F0D}
   .hbtn:disabled{opacity:.4;cursor:not-allowed;transform:none}
   .trim-read{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
   .presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
@@ -84,9 +85,12 @@
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;margin-top:-8px;border-radius:5px;background:linear-gradient(#F2F1EC,#CFCEC7);box-shadow:0 2px 3px rgba(0,0,0,.35), inset 0 1px 0 #fff;border:1px solid #A5A49D}
   input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--well-deep)}
   input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:5px;background:linear-gradient(#F2F1EC,#CFCEC7);border:1px solid #A5A49D}
-  select{font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:6px;border:1px solid var(--well-deep);background:var(--panel-hi)}
+  select, input[type=number]{font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:6px;border:1px solid var(--well-deep);background:var(--panel-hi)}
+  input[type=number]{width:76px}
   .fx-foot{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
   .status{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
+  .sl-row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+  .sl-row .sl{min-width:0}
   /* timeline */
   .tl-track{display:flex;gap:6px;overflow-x:auto;padding:10px;background:var(--screen);border-radius:8px;box-shadow:inset 0 3px 8px rgba(0,0,0,.6);min-height:64px;align-items:center}
   .tl-empty{font-family:var(--mono);font-size:11px;color:#4A5546;padding:0 6px}
@@ -114,8 +118,8 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.2</small></h1>
-      <span>desktop audio · record / mangle / splice / export</span>
+      <h1>CLIPDECK <small>v0.3</small></h1>
+      <span>desktop audio · record / mangle / slice / export</span>
     </div>
 
     <div class="src-toggle" role="group" aria-label="Audio source">
@@ -200,6 +204,46 @@
       </div>
 
       <div class="well">
+        <div class="label">Slicer <span id="slHint">seeded random slice playback</span></div>
+        <div class="sl-row">
+          <div class="sl"><label>Grid</label>
+            <select id="sGrid">
+              <option value="4">4</option><option value="8" selected>8</option>
+              <option value="16">16</option><option value="32">32</option>
+            </select></div>
+          <div class="sl"><label>Seed</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="sSeed" min="1" max="99999" value="1207">
+              <button class="mini" id="diceBtn" title="Random seed">🎲</button>
+            </div></div>
+          <div class="sl"><label>Bounce passes</label>
+            <select id="sPasses">
+              <option value="1">1</option><option value="2" selected>2</option><option value="4">4</option>
+            </select></div>
+        </div>
+        <div class="sliders">
+          <div class="sl"><label>Chaos <output id="oChaos">100%</output></label>
+            <input type="range" id="sChaos" min="0" max="2" step="0.01" value="1"></div>
+          <div class="sl"><label>Shuffle <output id="oShuf">30%</output></label>
+            <input type="range" id="sShuf" min="0" max="1" step="0.01" value="0.3"></div>
+          <div class="sl"><label>Reverse <output id="oSRev">15%</output></label>
+            <input type="range" id="sRev" min="0" max="1" step="0.01" value="0.15"></div>
+          <div class="sl"><label>Stutter <output id="oStut">15%</output></label>
+            <input type="range" id="sStut" min="0" max="1" step="0.01" value="0.15"></div>
+          <div class="sl"><label>Rest <output id="oRest">10%</output></label>
+            <input type="range" id="sRest" min="0" max="1" step="0.01" value="0.1"></div>
+          <div class="sl"><label>Jitter <output id="oJit">±0 st</output></label>
+            <input type="range" id="sJit" min="0" max="12" step="1" value="0"></div>
+        </div>
+        <div class="fx-foot">
+          <button class="hbtn hot" id="patBtn" disabled>▶ Pattern</button>
+          <button class="hbtn" id="patStopBtn" disabled>■ Stop</button>
+          <button class="hbtn primary" id="bounceBtn" disabled>Bounce → clip</button>
+          <span class="status" id="slStatus"></span>
+        </div>
+      </div>
+
+      <div class="well">
         <div class="label">Timeline <span id="tlTotal">0 items</span></div>
         <div class="tl-track" id="tlTrack"></div>
         <div class="tl-controls">
@@ -213,7 +257,7 @@
       </div>
 
       <div class="notice">
-        Desktop capture needs Chrome or Edge and a check on “Share audio” in the picker (tab share = tab audio; screen share = system audio on Windows; macOS Chrome offers tab audio only). Clips and the timeline persist in this browser via IndexedDB. “＋ Timeline” snapshots the current clip with its trim and effects; drag blocks to reorder.
+        Desktop capture needs Chrome or Edge and a check on “Share audio” in the picker. Clips, timeline, and slicer settings persist in this browser via IndexedDB. Slicer: same seed + same knobs = same pattern, live and bounced. Bounce renders the pattern to a new clip in the shelf, ready to re-slice.
       </div>
     </div>
   </div>
@@ -226,25 +270,29 @@
   let source = 'desktop';
   let mediaStream = null, recorder = null, recChunks = [];
   let recStart = 0, recTimer = null, meterRAF = null;
-  let clips = [];            // {id, name, buffer, duration, blob}
+  let clips = [];
   let cur = null;
   let trimA = 0, trimB = 0;
   let playing = null, mixPlaying = null;
   let reversed = false, looping = false, limiter = false;
   let reverbIR = null;
   let idSeq = 1, uidSeq = 1;
-  let timeline = [];         // {uid, clipId, name, trimA, trimB, reversed, fx:{...}}
+  let timeline = [];
   let crossfade = 0;
   const pitchCache = new Map();
 
   const $ = id => document.getElementById(id);
   const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0 };
+  // slicer settings
+  const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0 };
+  let slicer = { on:false };
 
   const fmt = s => {
     const m = Math.floor(s/60), sec = (s%60);
     return String(m).padStart(2,'0') + ':' + sec.toFixed(1).padStart(4,'0');
   };
   const setStatus = t => { $('status').textContent = t; };
+  const setSlStatus = t => { $('slStatus').textContent = t; };
   const setTlStatus = t => { $('tlStatus').textContent = t; };
   const nextFrame = () => new Promise(r => setTimeout(r, 20));
 
@@ -272,7 +320,10 @@
   });
   const saveClipDB = c => tx('clips','readwrite', s => s.put({id:c.id, name:c.name, blob:c.blob, createdAt:c.createdAt||Date.now()})).catch(()=>{});
   const deleteClipDB = id => tx('clips','readwrite', s => s.delete(id)).catch(()=>{});
-  const saveMeta = () => tx('meta','readwrite', s => { s.put(timeline, 'timeline'); s.put({idSeq, uidSeq, crossfade, limiter}, 'state'); }).catch(()=>{});
+  const saveMeta = () => tx('meta','readwrite', s => {
+    s.put(timeline, 'timeline');
+    s.put({idSeq, uidSeq, crossfade, limiter, sset:{...sset}}, 'state');
+  }).catch(()=>{});
   const getAll = store => new Promise((res) => {
     if (!db) return res([]);
     const t = db.transaction(store, 'readonly');
@@ -298,7 +349,7 @@
         try{
           const buf = await ctx.decodeAudioData(await s.blob.arrayBuffer());
           clips.push({id:s.id, name:s.name, buffer:buf, duration:buf.duration, blob:s.blob, createdAt:s.createdAt});
-        }catch(e){ /* undecodable blob — skip */ }
+        }catch(e){}
       }
       const state = await getMeta('state');
       if (state){
@@ -306,15 +357,17 @@
         uidSeq = state.uidSeq || 1;
         crossfade = state.crossfade || 0;
         limiter = !!state.limiter;
+        if (state.sset) Object.assign(sset, state.sset);
         $('fCross').value = crossfade; $('oCross').textContent = crossfade.toFixed(1)+'s';
         $('limitBtn').classList.toggle('toggled', limiter);
+        syncSlicerControls();
       } else if (clips.length){
         idSeq = Math.max(0,...clips.map(c=>c.id))+1;
       }
       const tl = await getMeta('timeline');
       if (Array.isArray(tl)) timeline = tl.filter(it => clips.some(c=>c.id===it.clipId));
       if (clips.length) setStatus('Restored ' + clips.length + ' clip' + (clips.length>1?'s':'') + ' from this browser.');
-    }catch(e){ /* fresh start */ }
+    }catch(e){}
     renderClips(); renderTimeline();
   }
 
@@ -328,7 +381,6 @@
     }
     return b;
   }
-
   function reverseBuffer(buf){
     const out = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
     for (let ch=0; ch<buf.numberOfChannels; ch++){
@@ -337,7 +389,6 @@
     }
     return out;
   }
-
   function distortionCurve(amount){
     const k = amount*120, n = 1024, curve = new Float32Array(n);
     for (let i=0;i<n;i++){
@@ -346,8 +397,6 @@
     }
     return curve;
   }
-
-  // Granular time-stretch (Hann OLA, 50% synthesis overlap → COLA)
   function stretchChannel(src, stretch, sr){
     const grain = Math.round(0.08*sr);
     const hopOut = grain>>1;
@@ -376,7 +425,6 @@
     }
     return out;
   }
-  // Pitch shift preserving duration: stretch by ratio, resample by ratio
   function pitchShiftBuffer(buf, semitones){
     const ratio = Math.pow(2, semitones/12);
     const sr = buf.sampleRate;
@@ -392,8 +440,6 @@
     for (let ch=0; ch<chans.length; ch++) out.getChannelData(ch).set(chans[ch].subarray(0, minLen));
     return out;
   }
-
-  // Source buffer with reverse + pitch applied (cached)
   async function getSourceBuffer(clip, rev, semitones){
     let buf = rev ? reverseBuffer(clip.buffer) : clip.buffer;
     if (!semitones) return buf;
@@ -405,7 +451,6 @@
     setStatus('');
     return shifted;
   }
-
   function buildChain(c, p){
     const input = c.createGain();
     let node = input;
@@ -443,8 +488,6 @@
     const tail = (p.verb>0.01?2.4:0) + (p.delay>0.01?1.5:0);
     return { input, out, tail };
   }
-
-  // Fade in/out gain automation on the output gain node
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
     if (fi > 0.01){
@@ -456,15 +499,12 @@
       gainParam.linearRampToValueAtTime(0.0001, t0+coreDur);
     }
   }
-
   function makeLimiter(c){
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -2; comp.knee.value = 0;
     comp.ratio.value = 20; comp.attack.value = 0.002; comp.release.value = 0.1;
     return comp;
   }
-
-  // Render one clip/settings snapshot offline → {buffer, coreDur}
   async function renderItem(item){
     const clip = clips.find(c=>c.id===item.clipId);
     if (!clip) return null;
@@ -486,7 +526,6 @@
     const buffer = await oc.startRendering();
     return { buffer, coreDur };
   }
-
   const snapshotCurrent = () => ({
     uid: uidSeq++, clipId: cur.id, name: cur.name,
     trimA, trimB, reversed, fx: {...fx}
@@ -565,6 +604,9 @@
 
   async function addClipFromBlob(blob, name){
     const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    return addClip(buf, blob, name);
+  }
+  function addClip(buf, blob, name){
     const clip = { id:idSeq++, name, buffer:buf, duration:buf.duration, blob, createdAt:Date.now() };
     clips.unshift(clip);
     renderClips();
@@ -621,7 +663,7 @@
         clips = clips.filter(x=>x!==c);
         timeline = timeline.filter(it => it.clipId!==c.id);
         deleteClipDB(c.id); saveMeta();
-        if (cur===c){ stopPlayback(); cur=null; $('clipTitle').textContent='—'; drawWave(); updateButtons(); }
+        if (cur===c){ stopPlayback(); stopSlicer(); cur=null; $('clipTitle').textContent='—'; drawWave(); updateButtons(); }
         renderClips(); renderTimeline();
       };
       list.appendChild(el);
@@ -629,7 +671,7 @@
   }
 
   function selectClip(c){
-    stopPlayback();
+    stopPlayback(); stopSlicer();
     cur = c; reversed = false;
     trimA = 0; trimB = c.duration;
     $('clipTitle').textContent = c.name;
@@ -639,7 +681,7 @@
 
   function updateButtons(){
     const on = !!cur;
-    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','revBtn','exportBtn','addTlBtn']) $(id).disabled = !on;
+    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','revBtn','exportBtn','addTlBtn','patBtn','patStopBtn','bounceBtn']) $(id).disabled = !on;
   }
 
   // ================= waveform + trim =================
@@ -657,7 +699,7 @@
     return peaks;
   }
 
-  function drawWave(playheadSec){
+  function drawWave(playheadSec, activeSlice){
     const w = canvas.clientWidth, h = canvas.height;
     if (canvas.width !== w*devicePixelRatio){ canvas.width = w*devicePixelRatio; g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
     g.clearRect(0,0,w,h);
@@ -674,6 +716,17 @@
       g.fillRect(x, h/2-p, 1, Math.max(2, p*2));
     }
     g.fillStyle = 'rgba(255,138,30,.14)'; g.fillRect(ax,0,bx-ax,h);
+    // slice grid
+    const N = sset.grid;
+    if (N > 1){
+      const sw = (bx-ax)/N;
+      if (activeSlice != null && activeSlice >= 0){
+        g.fillStyle = 'rgba(255,138,30,.35)';
+        g.fillRect(ax + activeSlice*sw, 0, sw, h);
+      }
+      g.fillStyle = 'rgba(184,240,168,.22)';
+      for (let i=1;i<N;i++) g.fillRect(ax + i*sw, 0, 1, h);
+    }
     for (const x of [ax,bx]){
       g.fillStyle = '#FF8A1E'; g.fillRect(x-2,0,4,h);
       g.fillRect(x-7,h/2-14,14,28);
@@ -700,7 +753,10 @@
     moveTrim(s);
   });
   canvas.addEventListener('pointermove', e => { if (dragging) moveTrim(posToSec(e)); });
-  canvas.addEventListener('pointerup', () => dragging=null);
+  canvas.addEventListener('pointerup', () => {
+    if (dragging && slicer.on) startSlicer(); // re-grid pattern to new trim
+    dragging = null;
+  });
   function moveTrim(s){
     if (dragging==='a') trimA = Math.min(s, trimB-0.05);
     else trimB = Math.max(s, trimA+0.05);
@@ -710,7 +766,7 @@
   function updateTrimRead(){
     $('trimRead').textContent = cur ? `${fmt(trimA)} → ${fmt(trimB)}  (${fmt(trimB-trimA)})` : '';
   }
-  $('trimResetBtn').onclick = () => { if(!cur)return; trimA=0; trimB=cur.duration; drawWave(); updateTrimRead(); };
+  $('trimResetBtn').onclick = () => { if(!cur)return; trimA=0; trimB=cur.duration; drawWave(); updateTrimRead(); if (slicer.on) startSlicer(); };
 
   // ================= fx controls =================
   const bind = (id, key, out, fmtFn) => {
@@ -776,14 +832,14 @@
 
   // ================= clip playback =================
   $('playBtn').onclick = () => startPlayback();
-  $('stopBtn').onclick = () => stopPlayback();
+  $('stopBtn').onclick = () => { stopPlayback(); stopSlicer(); };
 
   async function startPlayback(){
     if (!cur) return;
-    stopPlayback(); stopMix();
+    stopPlayback(); stopMix(); stopSlicer();
     ctx.resume();
     const buf = await getSourceBuffer(cur, reversed, fx.pitch);
-    if (!cur) return; // clip deleted while processing
+    if (!cur) return;
     const offset = reversed ? cur.duration - trimB : trimA;
     const dur = trimB - trimA;
     const coreDur = dur / fx.rate;
@@ -799,7 +855,7 @@
     if (!looping) applyFades(chain.out.gain, t0, coreDur, fx);
     if (looping) src.start(t0, offset);
     else src.start(t0, offset, dur);
-    playing = { src, t0, rafId:null };
+    playing = { src, t0, rafId:null, tailNode };
     src.onended = () => { if (playing && playing.src===src){ cancelAnimationFrame(playing.rafId); playing=null; drawWave(); } };
     const anim = () => {
       if (!playing) return;
@@ -815,10 +871,187 @@
   function stopPlayback(){
     if (!playing) return;
     try{ playing.src.onended=null; playing.src.stop(); }catch(e){}
+    try{ playing.tailNode.disconnect(); }catch(e){}
     cancelAnimationFrame(playing.rafId);
     playing = null; drawWave();
   }
-  function restartIfPlaying(){ if (playing) startPlayback(); }
+  function restartIfPlaying(){
+    if (playing) startPlayback();
+    else if (slicer.on) startSlicer();
+  }
+
+  // ================= slicer =================
+  function stepRand(step, salt){
+    let h = (sset.seed ^ Math.imul(step+1, 0x9E3779B1) ^ Math.imul(salt+1, 0x85EBCA6B)) >>> 0;
+    h = Math.imul(h ^ (h>>>16), 0x45d9f3b) >>> 0;
+    h = Math.imul(h ^ (h>>>16), 0x45d9f3b) >>> 0;
+    h ^= h>>>16;
+    return (h>>>0)/4294967296;
+  }
+  function stepDecisions(step, N){
+    const P = k => Math.min(1, sset[k]*sset.chaos);
+    if (stepRand(step,0) < P('rest')) return {rest:true};
+    const shuffled = stepRand(step,1) < P('shuffle');
+    const idx = shuffled ? Math.floor(stepRand(step,2)*N) : (step % N);
+    const rev = stepRand(step,3) < P('reverse');
+    let stut = 1;
+    if (stepRand(step,4) < P('stutter')) stut = stepRand(step,5) < 0.5 ? 2 : 4;
+    let jit = 0;
+    if (sset.jitter > 0) jit = Math.round((stepRand(step,6)*2-1) * sset.jitter * Math.min(1, sset.chaos));
+    return {rest:false, idx, rev, stut, jit};
+  }
+  // Schedule one step's hit(s) into any context
+  function scheduleHit(c, destInput, bufN, bufR, dec, tAbs, sliceStarts, sliceDur, stepDur, baseRate){
+    const rate = Math.max(0.05, baseRate * Math.pow(2, dec.jit/12));
+    for (let k=0; k<dec.stut; k++){
+      const t = tAbs + k*stepDur/dec.stut;
+      const src = c.createBufferSource();
+      src.buffer = dec.rev ? bufR : bufN;
+      const offN = sliceStarts[dec.idx];
+      const off = dec.rev ? Math.max(0, src.buffer.duration - (offN + sliceDur)) : offN;
+      const contentDur = dec.stut===1 ? sliceDur : Math.min(sliceDur, (stepDur/dec.stut)*rate);
+      const realDur = contentDur / rate;
+      src.playbackRate.value = rate;
+      const gn = c.createGain();
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.linearRampToValueAtTime(1, t+0.005);
+      gn.gain.setValueAtTime(1, Math.max(t+0.006, t+realDur-0.01));
+      gn.gain.linearRampToValueAtTime(0.0001, t+realDur);
+      src.connect(gn); gn.connect(destInput);
+      src.start(t, off, contentDur + 0.01);
+    }
+  }
+
+  $('patBtn').onclick = () => startSlicer();
+  $('patStopBtn').onclick = () => stopSlicer();
+
+  async function startSlicer(){
+    if (!cur) return;
+    stopPlayback(); stopMix(); stopSlicer();
+    await ctx.resume();
+    const N = sset.grid;
+    const region = trimB - trimA;
+    const sliceDur = region / N;
+    if (sliceDur < 0.02){ setSlStatus('Trim region too short for this grid.'); return; }
+    const bufN = await getSourceBuffer(cur, false, fx.pitch);
+    const bufR = await getSourceBuffer(cur, true, fx.pitch);
+    if (!cur) return;
+    const chain = buildChain(ctx, fx);
+    let tailNode = chain.out;
+    if (limiter){ const comp = makeLimiter(ctx); chain.out.connect(comp); tailNode = comp; }
+    tailNode.connect(ctx.destination);
+    const stepDur = sliceDur / fx.rate;
+    const sliceStarts = Array.from({length:N}, (_,i)=> trimA + i*sliceDur);
+    slicer = { on:true, step:0, nextTime:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], chain, tailNode, N, stepDur };
+    const tick = () => {
+      while (slicer.on && slicer.nextTime < ctx.currentTime + 0.15){
+        const dec = stepDecisions(slicer.step, N);
+        if (!dec.rest) scheduleHit(ctx, chain.input, bufN, bufR, dec, slicer.nextTime, sliceStarts, sliceDur, stepDur, fx.rate);
+        slicer.hits.push({t:slicer.nextTime, idx:dec.rest?-1:dec.idx});
+        if (slicer.hits.length > 64) slicer.hits.shift();
+        slicer.nextTime += stepDur;
+        slicer.step++;
+      }
+    };
+    tick();
+    slicer.timer = setInterval(tick, 25);
+    $('patBtn').classList.add('toggled');
+    setSlStatus('Pattern · seed ' + sset.seed + ' · grid ' + N);
+    const anim = () => {
+      if (!slicer.on) return;
+      const now = ctx.currentTime;
+      let active = -1;
+      for (const h of slicer.hits) if (now >= h.t && now < h.t + slicer.stepDur){ active = h.idx; break; }
+      drawWave(null, active);
+      slicer.rafId = requestAnimationFrame(anim);
+    };
+    anim();
+  }
+  function stopSlicer(){
+    if (!slicer.on) return;
+    slicer.on = false;
+    clearInterval(slicer.timer);
+    cancelAnimationFrame(slicer.rafId);
+    try{ slicer.tailNode.disconnect(); }catch(e){}
+    $('patBtn').classList.remove('toggled');
+    setSlStatus('');
+    drawWave();
+  }
+
+  $('bounceBtn').onclick = async () => {
+    if (!cur) return;
+    stopSlicer(); stopPlayback();
+    setSlStatus('Bouncing…');
+    const N = sset.grid;
+    const region = trimB - trimA;
+    const sliceDur = region / N;
+    if (sliceDur < 0.02){ setSlStatus('Trim region too short for this grid.'); return; }
+    const srcClip = cur;
+    const bufN = await getSourceBuffer(srcClip, false, fx.pitch);
+    const bufR = await getSourceBuffer(srcClip, true, fx.pitch);
+    const stepDur = sliceDur / fx.rate;
+    const steps = N * sset.passes;
+    const tail = (fx.verb>0.01?2.4:0) + (fx.delay>0.01?1.5:0) + 0.3;
+    const oc = new OfflineAudioContext(2, Math.ceil((steps*stepDur + tail + 0.05) * MIX_SR), MIX_SR);
+    const chain = buildChain(oc, fx);
+    let tailNode = chain.out;
+    if (limiter){ const comp = makeLimiter(oc); chain.out.connect(comp); tailNode = comp; }
+    tailNode.connect(oc.destination);
+    const sliceStarts = Array.from({length:N}, (_,i)=> trimA + i*sliceDur);
+    for (let s=0; s<steps; s++){
+      const dec = stepDecisions(s, N);
+      if (!dec.rest) scheduleHit(oc, chain.input, bufN, bufR, dec, 0.02 + s*stepDur, sliceStarts, sliceDur, stepDur, fx.rate);
+    }
+    const rendered = await oc.startRendering();
+    const blob = new Blob([encodeWav(rendered)], {type:'audio/wav'});
+    addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed);
+    setSlStatus('Bounced → shelf.');
+  };
+
+  // slicer controls
+  const sbind = (id, key, out, fmtFn) => {
+    $(id).addEventListener('input', e => {
+      sset[key] = parseFloat(e.target.value);
+      $(out).textContent = fmtFn(sset[key]);
+      saveMeta();
+      if ((key==='chaos'||key==='jitter') && slicer.on){} // live-read, no restart needed
+    });
+  };
+  sbind('sChaos','chaos','oChaos', v=>Math.round(v*100)+'%');
+  sbind('sShuf','shuffle','oShuf', v=>Math.round(v*100)+'%');
+  sbind('sRev','reverse','oSRev', v=>Math.round(v*100)+'%');
+  sbind('sStut','stutter','oStut', v=>Math.round(v*100)+'%');
+  sbind('sRest','rest','oRest', v=>Math.round(v*100)+'%');
+  sbind('sJit','jitter','oJit', v=>'±'+v+' st');
+  $('sGrid').addEventListener('change', e => {
+    sset.grid = parseInt(e.target.value, 10);
+    saveMeta(); drawWave();
+    if (slicer.on) startSlicer();
+  });
+  $('sSeed').addEventListener('change', e => {
+    sset.seed = Math.max(1, parseInt(e.target.value, 10) || 1);
+    e.target.value = sset.seed;
+    saveMeta();
+    if (slicer.on) startSlicer();
+  });
+  $('diceBtn').onclick = () => {
+    sset.seed = 1 + Math.floor(Math.random()*99999);
+    $('sSeed').value = sset.seed;
+    saveMeta();
+    if (slicer.on) startSlicer(); else setSlStatus('Seed ' + sset.seed);
+  };
+  $('sPasses').addEventListener('change', e => { sset.passes = parseInt(e.target.value, 10); saveMeta(); });
+  function syncSlicerControls(){
+    $('sGrid').value = String(sset.grid);
+    $('sSeed').value = sset.seed;
+    $('sPasses').value = String(sset.passes);
+    $('sChaos').value = sset.chaos; $('oChaos').textContent = Math.round(sset.chaos*100)+'%';
+    $('sShuf').value = sset.shuffle; $('oShuf').textContent = Math.round(sset.shuffle*100)+'%';
+    $('sRev').value = sset.reverse; $('oSRev').textContent = Math.round(sset.reverse*100)+'%';
+    $('sStut').value = sset.stutter; $('oStut').textContent = Math.round(sset.stutter*100)+'%';
+    $('sRest').value = sset.rest; $('oRest').textContent = Math.round(sset.rest*100)+'%';
+    $('sJit').value = sset.jitter; $('oJit').textContent = '±'+sset.jitter+' st';
+  }
 
   // ================= clip export =================
   $('exportBtn').onclick = async () => {
@@ -830,7 +1063,6 @@
     downloadWav(r.buffer, cur.name);
     setStatus('Exported.');
   };
-
   function downloadWav(buffer, name){
     const wav = encodeWav(buffer);
     const a = document.createElement('a');
@@ -852,13 +1084,11 @@
     $('oCross').textContent = crossfade.toFixed(1)+'s';
     saveMeta();
   });
-
   function itemCore(it){ return (it.trimB - it.trimA) / it.fx.rate; }
-
   function renderTimeline(){
     const track = $('tlTrack');
     track.innerHTML = '';
-    const total = timeline.reduce((s,it)=>s+itemCore(it),0) - Math.max(0, timeline.length-1)*Math.min(crossfade, 999)* (crossfade>0?1:0);
+    const total = timeline.reduce((s,it)=>s+itemCore(it),0);
     $('tlTotal').textContent = timeline.length + ' item' + (timeline.length===1?'':'s') + (timeline.length? ' · ~' + fmt(Math.max(0,total)) : '');
     const on = timeline.length > 0;
     $('mixPlayBtn').disabled = !on; $('mixStopBtn').disabled = !on; $('mixExportBtn').disabled = !on;
@@ -901,7 +1131,6 @@
       if (r) rendered.push(r);
     }
     if (!rendered.length) return null;
-    // placement
     const starts = [0];
     for (let i=1;i<rendered.length;i++){
       const cf = Math.min(crossfade, rendered[i-1].coreDur/2, rendered[i].coreDur/2);
@@ -920,14 +1149,13 @@
         const dst = mix.getChannelData(ch);
         for (let s=0; s<src.length; s++){
           let gIn = 1, gOut = 1;
-          if (cfIn > 0 && s < cfIn) gIn = Math.sin(Math.PI/2 * s/cfIn);              // equal-power in
-          if (cfOut > 0 && s >= coreS-cfOut && s < coreS) gOut = Math.cos(Math.PI/2 * (s-(coreS-cfOut))/cfOut); // equal-power out
+          if (cfIn > 0 && s < cfIn) gIn = Math.sin(Math.PI/2 * s/cfIn);
+          if (cfOut > 0 && s >= coreS-cfOut && s < coreS) gOut = Math.cos(Math.PI/2 * (s-(coreS-cfOut))/cfOut);
           const t = startS + s;
           if (t < totalSamples) dst[t] += src[s]*gIn*gOut;
         }
       }
     }
-    // safety normalize if summed peaks clip
     let peak = 0;
     for (let ch=0; ch<2; ch++){
       const d = mix.getChannelData(ch);
@@ -944,7 +1172,7 @@
   }
 
   $('mixPlayBtn').onclick = async () => {
-    stopPlayback(); stopMix();
+    stopPlayback(); stopMix(); stopSlicer();
     const mix = await stitchMix();
     if (!mix){ setTlStatus('Nothing to play.'); return; }
     ctx.resume();
@@ -969,7 +1197,6 @@
     cancelAnimationFrame(mixPlaying.rafId);
     mixPlaying = null; setTlStatus('');
   }
-
   $('mixExportBtn').onclick = async () => {
     stopMix();
     const mix = await stitchMix();
@@ -999,6 +1226,7 @@
 
   // ================= init =================
   window.addEventListener('resize', () => { peaksCache=null; drawWave(); });
+  syncSlicerControls();
   drawWave();
   restore();
 })();
