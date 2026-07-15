@@ -142,7 +142,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.6</small></h1>
+      <h1>CLIPDECK <small>v0.6.1</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -336,10 +336,14 @@
             <input type="range" id="fPitch" min="-12" max="12" step="1" value="0"></div>
           <div class="sl"><label>Pan <output id="oPan">C</output></label>
             <input type="range" id="fPan" min="-1" max="1" step="0.01" value="0"></div>
-          <div class="sl"><label>Auto-pan rate <output id="oApRate">1.0 Hz</output></label>
-            <input type="range" id="fApRate" min="0.1" max="8" step="0.1" value="1"></div>
-          <div class="sl"><label>Auto-pan depth <output id="oApDepth">off</output></label>
-            <input type="range" id="fApDepth" min="0" max="1" step="0.01" value="0"></div>
+          <div class="sl"><label>LFO rate <output id="oLfoRate">1.0 Hz</output></label>
+            <input type="range" id="fLfoRate" min="0.1" max="12" step="0.1" value="1"></div>
+          <div class="sl"><label>LFO depth <output id="oLfoDepth">off</output></label>
+            <input type="range" id="fLfoDepth" min="0" max="1" step="0.01" value="0"></div>
+          <div class="sl"><label>LFO shape</label>
+            <select id="fLfoShape"><option value="sine">Sine</option><option value="triangle">Triangle</option><option value="square">Square</option></select></div>
+          <div class="sl"><label>LFO →</label>
+            <select id="fLfoDest"><option value="pan">Pan</option><option value="filter">Filter</option><option value="volume">Volume</option><option value="speed">Speed</option></select></div>
           <div class="sl"><label>Reverb <output id="oVerb">0%</output></label>
             <input type="range" id="fVerb" min="0" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Echo <output id="oDelay">0%</output></label>
@@ -412,7 +416,7 @@
   const undoStack = [];
 
   const $ = id => document.getElementById(id);
-  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, apRate:1, apDepth:0, pingpong:false };
+  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, lfoRate:1, lfoDepth:0, lfoShape:'sine', lfoDest:'pan', pingpong:false };
   const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
@@ -762,11 +766,14 @@
       ws.oversample = '2x';
       node.connect(ws); node = ws;
     }
-    if (p.freq < 0.995){
+    let filterNode = null;
+    if (p.freq < 0.995 || (p.lfoDepth > 0.01 && p.lfoDest === 'filter')){
       const f = c.createBiquadFilter();
       f.type = p.type;
-      f.frequency.value = 80 * Math.pow(14000/80, p.freq);
+      const effFreq = p.freq < 0.995 ? p.freq : 0.6; // filter "off" but LFO-targeted → park it mid-band
+      f.frequency.value = 80 * Math.pow(14000/80, effFreq);
       if (p.type==='bandpass') f.Q.value = 1.2;
+      filterNode = f;
       node.connect(f); node = f;
     }
     const post = c.createGain();
@@ -799,25 +806,39 @@
       const wet = c.createGain(); wet.gain.value = p.verb*1.4;
       node.connect(cv); cv.connect(wet); wet.connect(post);
     }
-    // pan + auto-pan sit after the wet/dry sum so the whole voice moves together
+    // pan sits after the wet/dry sum so the whole voice moves together
     const panner = c.createStereoPanner();
     const basePan = Math.max(-1, Math.min(1, p.pan || 0));
     panner.pan.value = basePan;
     post.connect(panner);
-    let lfo = null;
-    if ((p.apDepth || 0) > 0.01){
-      lfo = c.createOscillator();
-      lfo.type = 'sine';
-      lfo.frequency.value = Math.max(0.05, p.apRate || 1);
-      const lg = c.createGain();
-      lg.gain.value = Math.min(1, p.apDepth) * (1 - Math.abs(basePan)); // headroom so base pan + sweep stays in range
-      lfo.connect(lg); lg.connect(panner.pan);
-      lfo.start(0);
-    }
     const out = c.createGain(); out.gain.value = p.gain;
     panner.connect(out);
+    // routable LFO
+    let lfo = null, speedMod = null;
+    if ((p.lfoDepth || 0) > 0.01){
+      lfo = c.createOscillator();
+      lfo.type = p.lfoShape || 'sine';
+      lfo.frequency.value = Math.max(0.05, p.lfoRate || 1);
+      const lg = c.createGain();
+      if (p.lfoDest === 'filter' && filterNode){
+        lg.gain.value = filterNode.frequency.value * 0.85 * p.lfoDepth; // sweep proportional to base freq
+        lfo.connect(lg); lg.connect(filterNode.frequency);
+      } else if (p.lfoDest === 'volume'){
+        out.gain.value = p.gain * (1 - p.lfoDepth/2);      // headroom: tremolo swings 0..gain
+        lg.gain.value = p.gain * p.lfoDepth/2;
+        lfo.connect(lg); lg.connect(out.gain);
+      } else if (p.lfoDest === 'speed'){
+        lg.gain.value = p.lfoDepth * 0.5 * p.rate;         // wow/vibrato relative to base rate
+        lfo.connect(lg);
+        speedMod = lg;                                      // callers connect this to each source's playbackRate
+      } else { // pan
+        lg.gain.value = Math.min(1, p.lfoDepth) * (1 - Math.abs(basePan));
+        lfo.connect(lg); lg.connect(panner.pan);
+      }
+      lfo.start(0);
+    }
     const tail = (p.verb>0.01?2.4:0) + (p.delay>0.01?1.5:0);
-    return { input, out, tail, lfo };
+    return { input, out, tail, lfo, speedMod };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -851,6 +872,7 @@
     const chain = buildChain(oc, p);
     applyFades(chain.out.gain, 0, coreDur, p);
     src.connect(chain.input);
+    if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
     if (limiter){ const comp = makeLimiter(oc); chain.out.connect(comp); comp.connect(oc.destination); }
     else chain.out.connect(oc.destination);
     src.start(0, offset, dur);
@@ -1281,13 +1303,32 @@
   bind('fGain','gain','oGain', v=>Math.round(v*100)+'%');
   const panFmt = v => Math.abs(v)<0.01 ? 'C' : (v<0?'L':'R')+Math.abs(Math.round(v*100));
   bind('fPan','pan','oPan', panFmt);
-  bind('fApRate','apRate','oApRate', v=>v.toFixed(1)+' Hz');
-  bind('fApDepth','apDepth','oApDepth', v=>v<0.01?'off':Math.round(v*100)+'%');
+  bind('fLfoRate','lfoRate','oLfoRate', v=>v.toFixed(1)+' Hz');
+  bind('fLfoDepth','lfoDepth','oLfoDepth', v=>v<0.01?'off':Math.round(v*100)+'%');
+  $('fLfoShape').addEventListener('change', e => { fx.lfoShape = e.target.value; restartIfPlaying(); });
+  $('fLfoDest').addEventListener('change', e => { fx.lfoDest = e.target.value; restartIfPlaying(); });
   $('ppBtn').onclick = () => {
     fx.pingpong = !fx.pingpong;
     $('ppBtn').classList.toggle('toggled', fx.pingpong);
     restartIfPlaying();
   };
+  // double-click any slider to snap it back to neutral
+  const SLIDER_DEFAULTS = {
+    fRate:1, fPitch:0, fPan:0, fLfoRate:1, fLfoDepth:0, fVerb:0, fDelay:0, fFb:0.35,
+    fCrunch:0, fFreq:1, fFadeIn:0, fFadeOut:0, fGain:1,
+    xRate:1, xVerb:0, xGain:1,
+    sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
+    fCross:0
+  };
+  document.querySelectorAll('input[type=range]').forEach(el => {
+    el.addEventListener('dblclick', () => {
+      if (!(el.id in SLIDER_DEFAULTS)) return;
+      el.value = SLIDER_DEFAULTS[el.id];
+      el.dispatchEvent(new Event('input'));
+      el.dispatchEvent(new Event('change'));
+    });
+    el.title = 'Double-click to reset';
+  });
   $('fType').addEventListener('change', e => { fx.type = e.target.value; restartIfPlaying(); });
   // simple-mode strip (same fx object, second set of controls)
   const sbindX = (id, key, out, fmtFn) => {
@@ -1311,10 +1352,10 @@
     phone:{type:'bandpass', freq:0.58, crunch:0.25},
     cave:{verb:0.85}, echo:{delay:0.6, fb:0.55, verb:0.2, pingpong:true},
     crunch:{crunch:0.8, gain:0.8},
-    wobble:{apDepth:0.9, apRate:4},
+    wobble:{lfoDepth:0.9, lfoRate:4, lfoDest:'pan'},
     clean:{}
   };
-  const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,apRate:1,apDepth:0,pingpong:false};
+  const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,lfoRate:1,lfoDepth:0,lfoShape:'sine',lfoDest:'pan',pingpong:false};
   document.querySelectorAll('.chip[data-p]').forEach(ch => ch.onclick = () => {
     Object.assign(fx, FX_DEFAULT, presets[ch.dataset.p]);
     syncControls(); syncSimple(); restartIfPlaying();
@@ -1332,8 +1373,10 @@
     $('fFadeOut').value=fx.fadeOut; $('oFadeOut').textContent=fx.fadeOut.toFixed(1)+'s';
     $('fGain').value=fx.gain; $('oGain').textContent=Math.round(fx.gain*100)+'%';
     $('fPan').value=fx.pan; $('oPan').textContent=panFmt(fx.pan);
-    $('fApRate').value=fx.apRate; $('oApRate').textContent=fx.apRate.toFixed(1)+' Hz';
-    $('fApDepth').value=fx.apDepth; $('oApDepth').textContent=fx.apDepth<0.01?'off':Math.round(fx.apDepth*100)+'%';
+    $('fLfoRate').value=fx.lfoRate; $('oLfoRate').textContent=fx.lfoRate.toFixed(1)+' Hz';
+    $('fLfoDepth').value=fx.lfoDepth; $('oLfoDepth').textContent=fx.lfoDepth<0.01?'off':Math.round(fx.lfoDepth*100)+'%';
+    $('fLfoShape').value=fx.lfoShape;
+    $('fLfoDest').value=fx.lfoDest;
     $('ppBtn').classList.toggle('toggled', !!fx.pingpong);
   }
   $('revBtn').onclick = () => {
@@ -1369,6 +1412,7 @@
     if (looping){ src.loop = true; src.loopStart = offset; src.loopEnd = offset + dur; }
     const chain = buildChain(ctx, fx);
     src.connect(chain.input);
+    if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
     let tailNode = chain.out;
     if (limiter){ const comp = makeLimiter(ctx); chain.out.connect(comp); tailNode = comp; }
     tailNode.connect(ctx.destination);
@@ -1421,7 +1465,7 @@
     return hash01(loop*131 + stepIdx, 9) < p;
   }
   // span = actual time until the next step (varies under swing)
-  function scheduleStep(c, destInput, bufN, bufR, st, tAbs, span, bounds){
+  function scheduleStep(c, chain, bufN, bufR, st, tAbs, span, bounds){
     const N = sset.grid;
     const idx = Math.min(st.slice, N-1);
     const sliceStart = bounds[idx], sliceLen = bounds[idx+1]-bounds[idx];
@@ -1437,6 +1481,7 @@
       else contentSecs = Math.min(sliceLen, (span/n) * hitRate);
       const realDur = contentSecs / hitRate;
       src.playbackRate.value = hitRate;
+      if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
       const gn = c.createGain();
       gn.gain.setValueAtTime(0.0001, t);
       gn.gain.linearRampToValueAtTime(1, t+0.005);
@@ -1446,9 +1491,9 @@
       if (st.pan){
         const pn = c.createStereoPanner();
         pn.pan.value = Math.max(-1, Math.min(1, st.pan));
-        gn.connect(pn); pn.connect(destInput);
+        gn.connect(pn); pn.connect(chain.input);
       } else {
-        gn.connect(destInput);
+        gn.connect(chain.input);
       }
       src.start(t, off, contentSecs + 0.01);
     }
@@ -1483,7 +1528,7 @@
         const st = pattern[stepIdx];
         let fired = -1;
         if (st.on && condPass(st.cond, loop, stepIdx)){
-          scheduleStep(ctx, chain.input, bufN, bufR, st, t, span, bounds);
+          scheduleStep(ctx, chain, bufN, bufR, st, t, span, bounds);
           fired = Math.min(st.slice, sset.grid-1);
         }
         seq.hits.push({t, span, stepIdx, sliceIdx:fired});
@@ -1625,18 +1670,18 @@
 
   // ---- pattern starters (genre skeletons) ----
   // Tokens: K anchor(loudest slice) · S accent(2nd loudest) · h filler · ? filler@25% · r retrig×2
-  // R retrig×4 · Q retrig×8@50% · O filler ring (open-hat feel) · V filler ring+reversed · . rest
+  // T retrig×3 (triplet) · R retrig×4 · Q retrig×8@50% · O filler ring · V filler ring+reversed · . rest
   const PATTERN_PRESETS = {
     trap:     {bpm:140, div:0.25, len:16, swing:54,
-               steps:['K','h','h','.','h','h','K','.','S','h','h','R','h','?','h','Q']},
+               steps:['K','h','r','.','h','R','K','.','S','h','r','R','h','T','r','Q']},
     dnb:      {bpm:174, div:0.25, len:16, swing:50,
-               steps:['K','h','.','h','S','.','h','?','h','.','K','h','S','.','h','r']},
+               steps:['K','h','.','r','S','.','h','?','h','r','K','R','S','.','T','r']},
     house:    {bpm:124, div:0.25, len:16, swing:50,
-               steps:['K','.','O','.','K','.','O','?','K','.','O','.','K','.','O','?']},
+               steps:['K','.','O','.','K','r','O','?','K','.','O','r','K','.','O','T']},
     boombap:  {bpm:92,  div:0.25, len:16, swing:58,
-               steps:['K','.','h','.','S','.','h','K','.','K','h','.','S','.','?','.']},
+               steps:['K','.','h','.','S','.','r','K','.','K','h','.','S','.','T','.']},
     halftime: {bpm:145, div:0.25, len:16, swing:52,
-               steps:['K','.','.','.','?','.','h','.','S','.','.','r','.','.','.','V']}
+               steps:['K','.','.','r','?','.','h','R','S','.','.','r','.','T','.','V']}
   };
   // rank in-trim slices by mean energy — loudest becomes the "kick", second the "snare"
   function rankPoolByEnergy(pool){
@@ -1684,6 +1729,7 @@
         case 'h': st.slice = filler; break;
         case '?': st.slice = filler; st.cond = '25'; break;
         case 'r': st.slice = filler; st.retrig = 2; break;
+        case 'T': st.slice = filler; st.retrig = 3; break;
         case 'R': st.slice = filler; st.retrig = 4; break;
         case 'Q': st.slice = filler; st.retrig = 8; st.cond = '50'; break;
         case 'O': st.slice = filler; st.gate = 'ring'; break;
@@ -1814,7 +1860,7 @@
       if (st.on && condPass(st.cond, loop, stepIdx)){
         const t = stepTimeOf(abs, 0.02, stepDur);
         const span = stepTimeOf(abs+1, 0.02, stepDur) - t;
-        scheduleStep(oc, chain.input, bufN, bufR, st, t, span, bounds);
+        scheduleStep(oc, chain, bufN, bufR, st, t, span, bounds);
       }
     }
     const rendered = await oc.startRendering();
