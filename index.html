@@ -142,7 +142,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.5.2</small></h1>
+      <h1>CLIPDECK <small>v0.6</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -163,7 +163,8 @@
       <button class="rec-btn" id="recBtn" aria-label="Start recording"><span class="dot">REC</span></button>
       <div class="screen">
         <div class="time" id="recTime">00:00.0</div>
-        <div class="meter"><i id="meterBar"></i></div>
+        <div class="meter"><i id="meterL"></i></div>
+        <div class="meter" style="margin-top:2px"><i id="meterR"></i></div>
       </div>
     </div>
   </div>
@@ -268,6 +269,7 @@
           <div class="sl"><label>Gate</label>
             <select id="iGate"><option value="cut">Cut</option><option value="ring">Ring</option></select></div>
           <div class="sl"><label>Pitch</label><input type="number" id="iPitch" min="-12" max="12" value="0"></div>
+          <div class="sl"><label>Pan</label><input type="number" id="iPan" min="-100" max="100" step="10" value="0"></div>
           <div class="sl"><label>Reverse</label><button class="mini" id="iRev">⇄</button></div>
           <div class="sl"><label>Lock</label><button class="mini" id="iLock">🔒</button></div>
         </div>
@@ -296,6 +298,8 @@
               <input type="range" id="sRest" min="0" max="1" step="0.01" value="0.1"></div>
             <div class="sl"><label>Jitter <output id="oJit">±0 st</output></label>
               <input type="range" id="sJit" min="0" max="12" step="1" value="0"></div>
+            <div class="sl"><label>Spread <output id="oSpread">off</output></label>
+              <input type="range" id="sSpread" min="0" max="1" step="0.01" value="0"></div>
           </div>
           <div class="fx-foot">
             <div class="sl"><label>Seed</label>
@@ -322,6 +326,7 @@
           <button class="chip" data-c="green" data-p="cave">Cave</button>
           <button class="chip" data-c="green" data-p="echo">Space echo</button>
           <button class="chip" data-c="red" data-p="crunch">Crunch</button>
+          <button class="chip" data-c="green" data-p="wobble">Wobble</button>
           <button class="chip" data-c="amber" data-p="clean">Clean</button>
         </div>
         <div class="sliders">
@@ -329,6 +334,12 @@
             <input type="range" id="fRate" min="0.4" max="2.2" step="0.01" value="1"></div>
           <div class="sl"><label>Pitch <output id="oPitch">0 st</output></label>
             <input type="range" id="fPitch" min="-12" max="12" step="1" value="0"></div>
+          <div class="sl"><label>Pan <output id="oPan">C</output></label>
+            <input type="range" id="fPan" min="-1" max="1" step="0.01" value="0"></div>
+          <div class="sl"><label>Auto-pan rate <output id="oApRate">1.0 Hz</output></label>
+            <input type="range" id="fApRate" min="0.1" max="8" step="0.1" value="1"></div>
+          <div class="sl"><label>Auto-pan depth <output id="oApDepth">off</output></label>
+            <input type="range" id="fApDepth" min="0" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Reverb <output id="oVerb">0%</output></label>
             <input type="range" id="fVerb" min="0" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Echo <output id="oDelay">0%</output></label>
@@ -349,6 +360,7 @@
             <input type="range" id="fGain" min="0" max="2" step="0.01" value="1"></div>
         </div>
         <div class="fx-foot">
+          <button class="hbtn" id="ppBtn">Ping-pong</button>
           <button class="hbtn" id="limitBtn">Limiter</button>
           <button class="hbtn" id="addTlBtn" disabled>＋ Timeline</button>
           <button class="hbtn primary" id="exportBtn" disabled>Export WAV</button>
@@ -400,9 +412,9 @@
   const undoStack = [];
 
   const $ = id => document.getElementById(id);
-  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0 };
-  const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, bpm:120, div:0.5, len:8, swing:50 };
-  const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, locked:false });
+  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, apRate:1, apDepth:0, pingpong:false };
+  const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
+  const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
   let seq = { on:false };
 
@@ -760,11 +772,25 @@
     const post = c.createGain();
     node.connect(post);
     if (p.delay > 0.01){
-      const d = c.createDelay(1.2); d.delayTime.value = 0.34;
-      const fb = c.createGain(); fb.gain.value = p.fb;
       const wet = c.createGain(); wet.gain.value = p.delay;
-      node.connect(d); d.connect(fb); fb.connect(d);
-      d.connect(wet); wet.connect(post);
+      if (p.pingpong){
+        // classic ping-pong: L delay feeds R delay, cross-fed back, hard-panned taps
+        const dL = c.createDelay(1.2); dL.delayTime.value = 0.34;
+        const dR = c.createDelay(1.2); dR.delayTime.value = 0.34;
+        const fb = c.createGain(); fb.gain.value = p.fb;
+        const merge = c.createChannelMerger(2);
+        node.connect(dL);
+        dL.connect(merge, 0, 0);
+        dL.connect(dR);
+        dR.connect(merge, 0, 1);
+        dR.connect(fb); fb.connect(dL);
+        merge.connect(wet); wet.connect(post);
+      } else {
+        const d = c.createDelay(1.2); d.delayTime.value = 0.34;
+        const fb = c.createGain(); fb.gain.value = p.fb;
+        node.connect(d); d.connect(fb); fb.connect(d);
+        d.connect(wet); wet.connect(post);
+      }
     }
     if (p.verb > 0.01){
       const cv = c.createConvolver();
@@ -773,10 +799,25 @@
       const wet = c.createGain(); wet.gain.value = p.verb*1.4;
       node.connect(cv); cv.connect(wet); wet.connect(post);
     }
+    // pan + auto-pan sit after the wet/dry sum so the whole voice moves together
+    const panner = c.createStereoPanner();
+    const basePan = Math.max(-1, Math.min(1, p.pan || 0));
+    panner.pan.value = basePan;
+    post.connect(panner);
+    let lfo = null;
+    if ((p.apDepth || 0) > 0.01){
+      lfo = c.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = Math.max(0.05, p.apRate || 1);
+      const lg = c.createGain();
+      lg.gain.value = Math.min(1, p.apDepth) * (1 - Math.abs(basePan)); // headroom so base pan + sweep stays in range
+      lfo.connect(lg); lg.connect(panner.pan);
+      lfo.start(0);
+    }
     const out = c.createGain(); out.gain.value = p.gain;
-    post.connect(out);
+    panner.connect(out);
     const tail = (p.verb>0.01?2.4:0) + (p.delay>0.01?1.5:0);
-    return { input, out, tail };
+    return { input, out, tail, lfo };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -839,7 +880,13 @@
     if (recorder){ recorder.stop(); return; }
     try{
       if (source === 'desktop'){
-        mediaStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video:true,
+          audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:{ideal:2} },
+          systemAudio:'include',            // surface the system-audio option on screen shares
+          selfBrowserSurface:'exclude',     // hide CLIPDECK's own (silent) tab from the picker
+          suppressLocalAudioPlayback:false  // keep the captured tab audible while recording
+        });
         if (mediaStream.getAudioTracks().length === 0){
           mediaStream.getTracks().forEach(t=>t.stop());
           setStatus('That share had no audio — hit REC again and tick “Also share tab audio” at the bottom of the picker.');
@@ -848,7 +895,9 @@
         mediaStream.getVideoTracks().forEach(t=>t.stop());
         mediaStream = new MediaStream(mediaStream.getAudioTracks());
       } else {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false } });
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:{ideal:2}, sampleRate:{ideal:48000} }
+        });
       }
     }catch(e){
       setStatus(e.name === 'NotAllowedError'
@@ -859,7 +908,7 @@
     await ctx.resume();
     recChunks = [];
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
-    recorder = new MediaRecorder(mediaStream, mime ? {mimeType:mime} : undefined);
+    recorder = new MediaRecorder(mediaStream, Object.assign({audioBitsPerSecond:256000}, mime ? {mimeType:mime} : {}));
     recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
     recorder.onstop = onRecStop;
     recorder.start(100);
@@ -869,21 +918,32 @@
     $('recLed').classList.add('on');
     setStatus('Recording ' + (source==='desktop'?'desktop':'mic') + '… hit REC again to stop.');
     recTimer = setInterval(()=>{ $('recTime').textContent = fmt((performance.now()-recStart)/1000); }, 100);
-    const an = ctx.createAnalyser(); an.fftSize = 512;
-    ctx.createMediaStreamSource(mediaStream).connect(an);
-    const data = new Uint8Array(an.fftSize);
+    // stereo meter: split channels so a mono source visibly shows a dead R bar
+    const split = ctx.createChannelSplitter(2);
+    ctx.createMediaStreamSource(mediaStream).connect(split);
+    const anL = ctx.createAnalyser(); anL.fftSize = 512;
+    const anR = ctx.createAnalyser(); anR.fftSize = 512;
+    split.connect(anL, 0);
+    split.connect(anR, 1);
+    const dataL = new Uint8Array(anL.fftSize), dataR = new Uint8Array(anR.fftSize);
     const tick = () => {
-      an.getByteTimeDomainData(data);
-      let peak = 0;
-      for (let i=0;i<data.length;i++) peak = Math.max(peak, Math.abs(data[i]-128)/128);
-      $('meterBar').style.width = Math.min(100, peak*130) + '%';
+      anL.getByteTimeDomainData(dataL);
+      anR.getByteTimeDomainData(dataR);
+      let pL = 0, pR = 0;
+      for (let i=0;i<dataL.length;i++){
+        pL = Math.max(pL, Math.abs(dataL[i]-128)/128);
+        pR = Math.max(pR, Math.abs(dataR[i]-128)/128);
+      }
+      $('meterL').style.width = Math.min(100, pL*130) + '%';
+      $('meterR').style.width = Math.min(100, pR*130) + '%';
       meterRAF = requestAnimationFrame(tick);
     };
     tick();
   };
   async function onRecStop(){
     clearInterval(recTimer); cancelAnimationFrame(meterRAF);
-    $('meterBar').style.width = '0%';
+    $('meterL').style.width = '0%';
+    $('meterR').style.width = '0%';
     $('recBtn').classList.remove('armed');
     $('recLed').classList.remove('on');
     mediaStream.getTracks().forEach(t=>t.stop());
@@ -1022,7 +1082,7 @@
       const el = document.createElement('div');
       el.className = 'clip' + (cur===c?' sel':'');
       el.innerHTML = `<div class="name" contenteditable spellcheck="false"></div>
-        <div class="meta"><span>${fmt(c.duration)}</span><button class="del" title="Delete">✕</button></div>`;
+        <div class="meta"><span>${fmt(c.duration)} · ${c.buffer.numberOfChannels>1?'ST':'M'}</span><button class="del" title="Delete">✕</button></div>`;
       el.querySelector('.name').textContent = c.name;
       el.onclick = e => { if (e.target.classList.contains('del') || e.target.classList.contains('name')) return; selectClip(c, false); };
       el.querySelector('.name').addEventListener('blur', ev => {
@@ -1219,6 +1279,15 @@
   bind('fFadeIn','fadeIn','oFadeIn', v=>v.toFixed(1)+'s');
   bind('fFadeOut','fadeOut','oFadeOut', v=>v.toFixed(1)+'s');
   bind('fGain','gain','oGain', v=>Math.round(v*100)+'%');
+  const panFmt = v => Math.abs(v)<0.01 ? 'C' : (v<0?'L':'R')+Math.abs(Math.round(v*100));
+  bind('fPan','pan','oPan', panFmt);
+  bind('fApRate','apRate','oApRate', v=>v.toFixed(1)+' Hz');
+  bind('fApDepth','apDepth','oApDepth', v=>v<0.01?'off':Math.round(v*100)+'%');
+  $('ppBtn').onclick = () => {
+    fx.pingpong = !fx.pingpong;
+    $('ppBtn').classList.toggle('toggled', fx.pingpong);
+    restartIfPlaying();
+  };
   $('fType').addEventListener('change', e => { fx.type = e.target.value; restartIfPlaying(); });
   // simple-mode strip (same fx object, second set of controls)
   const sbindX = (id, key, out, fmtFn) => {
@@ -1240,11 +1309,12 @@
   const presets = {
     chipmunk:{rate:1.6}, deep:{rate:0.62},
     phone:{type:'bandpass', freq:0.58, crunch:0.25},
-    cave:{verb:0.85}, echo:{delay:0.6, fb:0.55, verb:0.2},
+    cave:{verb:0.85}, echo:{delay:0.6, fb:0.55, verb:0.2, pingpong:true},
     crunch:{crunch:0.8, gain:0.8},
+    wobble:{apDepth:0.9, apRate:4},
     clean:{}
   };
-  const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0};
+  const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,apRate:1,apDepth:0,pingpong:false};
   document.querySelectorAll('.chip[data-p]').forEach(ch => ch.onclick = () => {
     Object.assign(fx, FX_DEFAULT, presets[ch.dataset.p]);
     syncControls(); syncSimple(); restartIfPlaying();
@@ -1261,6 +1331,10 @@
     $('fFadeIn').value=fx.fadeIn; $('oFadeIn').textContent=fx.fadeIn.toFixed(1)+'s';
     $('fFadeOut').value=fx.fadeOut; $('oFadeOut').textContent=fx.fadeOut.toFixed(1)+'s';
     $('fGain').value=fx.gain; $('oGain').textContent=Math.round(fx.gain*100)+'%';
+    $('fPan').value=fx.pan; $('oPan').textContent=panFmt(fx.pan);
+    $('fApRate').value=fx.apRate; $('oApRate').textContent=fx.apRate.toFixed(1)+' Hz';
+    $('fApDepth').value=fx.apDepth; $('oApDepth').textContent=fx.apDepth<0.01?'off':Math.round(fx.apDepth*100)+'%';
+    $('ppBtn').classList.toggle('toggled', !!fx.pingpong);
   }
   $('revBtn').onclick = () => {
     reversed = !reversed;
@@ -1302,7 +1376,7 @@
     if (!looping) applyFades(chain.out.gain, t0, coreDur, fx);
     if (looping) src.start(t0, offset);
     else src.start(t0, offset, dur);
-    playing = { src, t0, rafId:null, tailNode };
+    playing = { src, t0, rafId:null, tailNode, chain };
     src.onended = () => { if (playing && playing.src===src){ cancelAnimationFrame(playing.rafId); playing=null; drawWave(); } };
     const anim = () => {
       if (!playing) return;
@@ -1318,6 +1392,7 @@
   function stopPlayback(){
     if (!playing) return;
     try{ playing.src.onended=null; playing.src.stop(); }catch(e){}
+    try{ if (playing.chain && playing.chain.lfo) playing.chain.lfo.stop(); }catch(e){}
     try{ playing.tailNode.disconnect(); }catch(e){}
     cancelAnimationFrame(playing.rafId);
     playing = null; drawWave();
@@ -1367,7 +1442,14 @@
       gn.gain.linearRampToValueAtTime(1, t+0.005);
       gn.gain.setValueAtTime(1, Math.max(t+0.006, t+realDur-0.01));
       gn.gain.linearRampToValueAtTime(0.0001, t+realDur);
-      src.connect(gn); gn.connect(destInput);
+      src.connect(gn);
+      if (st.pan){
+        const pn = c.createStereoPanner();
+        pn.pan.value = Math.max(-1, Math.min(1, st.pan));
+        gn.connect(pn); pn.connect(destInput);
+      } else {
+        gn.connect(destInput);
+      }
       src.start(t, off, contentSecs + 0.01);
     }
   }
@@ -1429,6 +1511,7 @@
     seq.on = false;
     clearInterval(seq.timer);
     cancelAnimationFrame(seq.rafId);
+    try{ if (seq.chain && seq.chain.lfo) seq.chain.lfo.stop(); }catch(e){}
     try{ seq.tailNode.disconnect(); }catch(e){}
     $('patBtn').classList.remove('toggled');
     setSlStatus('');
@@ -1451,6 +1534,7 @@
       if (st.retrig>1) tags.push('×'+st.retrig);
       if (st.cond!=='100') tags.push(st.cond==='first'?'1st':st.cond);
       if (st.pitch) tags.push((st.pitch>0?'+':'')+st.pitch);
+      if (st.pan) tags.push((st.pan<0?'L':'R')+Math.abs(Math.round(st.pan*100)));
       if (st.gate==='ring') tags.push('~');
       el.innerHTML = `<span class="idx">${i+1}</span>${st.locked?'<span class="lk">🔒</span>':''}
         <span class="n">${st.on ? st.slice+1 : '·'}</span>
@@ -1494,6 +1578,7 @@
     $('iCond').value = st.cond;
     $('iGate').value = st.gate;
     $('iPitch').value = st.pitch;
+    $('iPan').value = Math.round((st.pan||0)*100);
     $('iRev').classList.toggle('toggled', st.rev);
     $('iLock').classList.toggle('toggled', st.locked);
   }
@@ -1504,6 +1589,7 @@
   $('iCond').addEventListener('change', e => stepEdit(st => st.cond = e.target.value));
   $('iGate').addEventListener('change', e => stepEdit(st => st.gate = e.target.value));
   $('iPitch').addEventListener('change', e => stepEdit(st => { st.pitch = Math.max(-12, Math.min(12, parseInt(e.target.value,10)||0)); e.target.value = st.pitch; }));
+  $('iPan').addEventListener('change', e => stepEdit(st => { st.pan = Math.max(-1, Math.min(1, (parseInt(e.target.value,10)||0)/100)); e.target.value = Math.round(st.pan*100); }));
   $('iRev').onclick = () => stepEdit(st => st.rev = !st.rev);
   $('iLock').onclick = () => { if(selStep<0)return; pattern[selStep].locked = !pattern[selStep].locked; renderSteps(); renderInsp(); saveMeta(); };
 
@@ -1524,7 +1610,8 @@
         retrig = r<0.4?2 : r<0.65?3 : r<0.9?4 : 8;
       }
       const pitch = sset.jitter>0 ? Math.round((hash01(i,6)*2-1)*sset.jitter*Math.min(1,sset.chaos)) : 0;
-      pattern[i] = { ...pattern[i], on, slice, rev, retrig, pitch, cond:'100', gate:pattern[i].gate };
+      const pan = sset.spread>0.01 ? Math.round((hash01(i,7)*2-1)*sset.spread*Math.min(1,sset.chaos)*100)/100 : 0;
+      pattern[i] = { ...pattern[i], on, slice, rev, retrig, pitch, pan, cond:'100', gate:pattern[i].gate };
     }
     renderSteps(); renderInsp(); saveMeta();
     setSlStatus('Rolled · seed ' + sset.seed + ' · ' + pool.length + ' slices in trim');
@@ -1626,6 +1713,7 @@
   sbind('sStut','stutter','oStut', v=>Math.round(v*100)+'%');
   sbind('sRest','rest','oRest', v=>Math.round(v*100)+'%');
   sbind('sJit','jitter','oJit', v=>'±'+v+' st');
+  sbind('sSpread','spread','oSpread', v=>v<0.01?'off':'±'+Math.round(v*100)+'%');
   $('sSwing').addEventListener('input', e => {
     sset.swing = parseInt(e.target.value, 10);
     $('oSwing').textContent = sset.swing + '%';
@@ -1698,6 +1786,7 @@
     $('sStut').value = sset.stutter; $('oStut').textContent = Math.round(sset.stutter*100)+'%';
     $('sRest').value = sset.rest; $('oRest').textContent = Math.round(sset.rest*100)+'%';
     $('sJit').value = sset.jitter; $('oJit').textContent = '±'+sset.jitter+' st';
+    $('sSpread').value = sset.spread; $('oSpread').textContent = sset.spread<0.01?'off':'±'+Math.round(sset.spread*100)+'%';
   }
 
   // ---- bounce ----
