@@ -139,7 +139,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.4</small></h1>
+      <h1>CLIPDECK <small>v0.4.1</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -180,6 +180,7 @@
           <button class="hbtn" id="loopBtn" disabled>∞ Loop</button>
           <button class="hbtn" id="revBtn" disabled>⇄ Reverse</button>
           <button class="hbtn" id="trimResetBtn" disabled>Reset trim</button>
+          <button class="hbtn" id="commitBtn" disabled>Commit trim</button>
           <span class="trim-read" id="trimRead">drag the orange handles to trim</span>
         </div>
       </div>
@@ -326,7 +327,7 @@
       </div>
 
       <div class="notice">
-        Desktop capture needs Chrome/Edge + “Share audio” in the picker. Everything persists in this browser (IndexedDB). Sequencer: click a step to edit it, right-click or long-press to toggle on/off, 🔒 steps survive Rolls. Speed is now pure character — step timing comes from BPM. Slice grid snaps to detected transients (ticks above the waveform).
+        Desktop capture needs Chrome/Edge + “Share audio” in the picker. Everything persists in this browser (IndexedDB). Slices span the whole clip and don’t move when you trim — trim handles stick to slice edges, Roll only picks slices inside the trim, and Commit trim crops the clip so the grid re-spreads across what’s left (destructive until undo lands). Speed is pure character; step timing comes from BPM.
       </div>
     </div>
   </div>
@@ -464,11 +465,13 @@
       env[i] = Math.sqrt(s/(win/4));
     }
     let peak = 0; for (let i=0;i<n;i++) if (env[i]>peak) peak = env[i];
-    // auto-trim bounds
-    const floor = peak * 0.02;
+    // auto-trim bounds: floor = louder of -24dB rel / absolute room floor; require 3 sustained frames (~30ms)
+    const floor = Math.max(0.003, peak * 0.06);
+    const sustained = i => env[i] > floor && env[Math.min(n-1,i+1)] > floor && env[Math.min(n-1,i+2)] > floor;
+    const sustainedBack = i => env[i] > floor && env[Math.max(0,i-1)] > floor && env[Math.max(0,i-2)] > floor;
     let a = 0, b = n-1;
-    while (a < n && env[a] <= floor) a++;
-    while (b > a && env[b] <= floor) b--;
+    while (a < n-2 && !sustained(a)) a++;
+    while (b > a+2 && !sustainedBack(b)) b--;
     const pad = 0.08;
     clip.autoTrim = {
       a: Math.max(0, a*hop/sr - pad),
@@ -508,18 +511,18 @@
     }
   }
 
-  // slice boundaries: equal grid, optionally snapped to onsets within ±15% of a slice
+  // slice boundaries span the FULL clip (slices are a property of the clip, not the trim).
+  // Equal grid, optionally snapped to onsets within ±15% of a slice.
   function sliceBoundaries(){
     const N = sset.grid;
-    const region = trimB - trimA;
+    const dur = cur ? cur.duration : 1;
     const b = new Array(N+1);
-    for (let i=0;i<=N;i++) b[i] = trimA + region*i/N;
+    for (let i=0;i<=N;i++) b[i] = dur*i/N;
     if (snapOn && cur && cur.onsets && cur.onsets.length){
-      const tol = (region/N) * 0.15;
+      const tol = (dur/N) * 0.15;
       for (let i=1;i<N;i++){
         let best = null, bd = tol;
         for (const o of cur.onsets){
-          if (o <= trimA || o >= trimB) continue;
           const d2 = Math.abs(o - b[i]);
           if (d2 < bd){ bd = d2; best = o; }
         }
@@ -528,6 +531,18 @@
       for (let i=1;i<=N;i++) b[i] = Math.max(b[i], b[i-1]+0.01);
     }
     return b;
+  }
+  // slices whose midpoint falls inside the trim — the pool Roll and sequential fills draw from
+  function slicePool(){
+    const N = sset.grid;
+    if (!cur) return Array.from({length:N}, (_,i)=>i);
+    const b = sliceBoundaries();
+    const pool = [];
+    for (let i=0;i<N;i++){
+      const mid = (b[i]+b[i+1])/2;
+      if (mid >= trimA && mid <= trimB) pool.push(i);
+    }
+    return pool.length ? pool : Array.from({length:N}, (_,i)=>i);
   }
 
   // ================= DSP =================
@@ -838,7 +853,7 @@
   }
   function updateButtons(){
     const on = !!cur;
-    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','revBtn','exportBtn','addTlBtn','patBtn','patStopBtn','bounceBtn']) $(id).disabled = !on;
+    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','commitBtn','revBtn','exportBtn','addTlBtn','patBtn','patStopBtn','bounceBtn']) $(id).disabled = !on;
   }
 
   // ================= waveform + trim =================
@@ -919,6 +934,14 @@
     dragging = null;
   });
   function moveTrim(s){
+    // magnetic snap to slice boundaries ("trim tries to stick to the slice count")
+    if (cur){
+      const b = sliceBoundaries();
+      const magnet = 10 / canvas.clientWidth * cur.duration;
+      for (const edge of b){
+        if (Math.abs(s - edge) < magnet){ s = edge; break; }
+      }
+    }
     if (dragging==='a') trimA = Math.min(s, trimB-0.05);
     else trimB = Math.max(s, trimA+0.05);
     trimA = Math.max(0, trimA); trimB = Math.min(cur.duration, trimB);
@@ -928,6 +951,37 @@
     $('trimRead').textContent = cur ? `${fmt(trimA)} → ${fmt(trimB)}  (${fmt(trimB-trimA)})` : '';
   }
   $('trimResetBtn').onclick = () => { if(!cur)return; trimA=0; trimB=cur.duration; drawWave(); updateTrimRead(); if (seq.on) startSeq(); };
+  $('commitBtn').onclick = () => {
+    if (!cur) return;
+    if (trimB - trimA >= cur.duration - 0.01){ setStatus('Nothing to commit — trim is the whole clip.'); return; }
+    stopPlayback(); stopSeq();
+    const buf = cur.buffer, sr = buf.sampleRate;
+    const s0 = Math.floor(trimA*sr), s1 = Math.min(buf.length, Math.ceil(trimB*sr));
+    const len = s1 - s0;
+    if (len < sr*0.05){ setStatus('Trim too short to commit.'); return; }
+    // remap pattern slices: old in-trim pool re-spreads across the new full-width grid
+    const pool = slicePool();
+    const N = sset.grid;
+    pattern.forEach(st => {
+      const rel = pool.indexOf(st.slice);
+      if (rel >= 0) st.slice = Math.max(0, Math.min(N-1, Math.round(rel * N / pool.length)));
+      else st.slice = Math.max(0, Math.min(N-1, st.slice));
+    });
+    const cropped = ctx.createBuffer(buf.numberOfChannels, len, sr);
+    for (let ch=0; ch<buf.numberOfChannels; ch++){
+      cropped.getChannelData(ch).set(buf.getChannelData(ch).subarray(s0, s1));
+    }
+    cur.buffer = cropped;
+    cur.duration = cropped.duration;
+    cur.blob = new Blob([encodeWav(cropped)], {type:'audio/wav'});
+    analyzeClip(cur);
+    pitchCache.forEach((v,k)=>{ if (k.startsWith(cur.id+'|')) pitchCache.delete(k); });
+    trimA = 0; trimB = cur.duration;
+    peaksCache = null;
+    saveClipDB(cur); saveMeta();
+    renderClips(); renderSteps(); drawWave(); updateTrimRead();
+    setStatus('Committed — grid re-spread over ' + fmt(cur.duration) + '.');
+  };
   $('autoTrimBtn').onclick = () => {
     autoTrimOn = !autoTrimOn;
     $('autoTrimBtn').classList.toggle('toggled', autoTrimOn);
@@ -1227,13 +1281,13 @@
 
   // ---- roll generator ----
   function roll(){
-    const N = sset.grid;
+    const pool = slicePool();
     const P = k => Math.min(1, sset[k]*sset.chaos);
     for (let i=0;i<32;i++){
       if (pattern[i].locked) continue;
       const on = hash01(i,0) >= P('rest');
       const shuffled = hash01(i,1) < P('shuffle');
-      const slice = shuffled ? Math.floor(hash01(i,2)*N) : i % N;
+      const slice = shuffled ? pool[Math.floor(hash01(i,2)*pool.length)] : pool[i % pool.length];
       const rev = hash01(i,3) < P('reverse');
       let retrig = 1;
       if (hash01(i,4) < P('stutter')){
@@ -1244,7 +1298,7 @@
       pattern[i] = { ...pattern[i], on, slice, rev, retrig, pitch, cond:'100', gate:pattern[i].gate };
     }
     renderSteps(); renderInsp(); saveMeta();
-    setSlStatus('Rolled · seed ' + sset.seed);
+    setSlStatus('Rolled · seed ' + sset.seed + ' · ' + pool.length + ' slices in trim');
   }
   $('rollBtn').onclick = roll;
   $('diceBtn').onclick = () => {
