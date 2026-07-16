@@ -99,6 +99,13 @@
   select, input[type=number]{font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:6px;border:1px solid var(--well-deep);background:var(--panel-hi)}
   input[type=number]{width:70px}
   .fx-foot{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  .fxcard{background:var(--panel-hi);border-radius:8px;margin-top:14px;box-shadow:0 2px 4px rgba(0,0,0,.15)}
+  .fxcard-h{display:flex;align-items:center;gap:12px;padding:10px 12px;cursor:pointer;user-select:none}
+  .fxcard-t{font-family:var(--mono);font-size:11px;letter-spacing:.14em;font-weight:700}
+  .fxcard-m{font-family:var(--mono);font-size:10px;color:var(--ink-soft);margin-left:auto}
+  .fxcard-b{padding:0 12px 14px}
+  .fxcard.closed .fxcard-b{display:none}
+  .mini.hot{background:var(--rec);color:#fff}
   .status{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
   .sl-row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
   .sl-row .sl{min-width:0}
@@ -146,7 +153,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.8</small></h1>
+      <h1>CLIPDECK <small>v0.9</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -327,15 +334,7 @@
       <!-- EFFECTS (deck) -->
       <div class="well deck-only">
         <div class="label">Effects <span>post-sequencer</span></div>
-        <div class="presets">
-          <button class="chip" data-c="amber" data-p="chipmunk">Chipmunk</button>
-          <button class="chip" data-c="blue" data-p="deep">Deep voice</button>
-          <button class="chip" data-c="blue" data-p="phone">Telephone</button>
-          <button class="chip" data-c="green" data-p="cave">Cave</button>
-          <button class="chip" data-c="green" data-p="echo">Space echo</button>
-          <button class="chip" data-c="red" data-p="crunch">Crunch</button>
-          <button class="chip" data-c="amber" data-p="clean">Clean</button>
-        </div>
+        <div class="presets" id="fxBankRow" title="Click = load · empty user slot = save · right-click = overwrite"></div>
         <div class="sliders">
           <div class="sl"><label>Speed <output id="oRate">1.00×</output></label>
             <input type="range" id="fRate" min="0.4" max="2.2" step="0.01" value="1"></div>
@@ -345,10 +344,6 @@
             <input type="range" id="fPan" min="-1" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Reverb <output id="oVerb">0%</output></label>
             <input type="range" id="fVerb" min="0" max="1" step="0.01" value="0"></div>
-          <div class="sl"><label>Echo <output id="oDelay">0%</output></label>
-            <input type="range" id="fDelay" min="0" max="1" step="0.01" value="0"></div>
-          <div class="sl"><label>Echo feedback <output id="oFb">35%</output></label>
-            <input type="range" id="fFb" min="0" max="0.85" step="0.01" value="0.35"></div>
           <div class="sl"><label>Crunch <output id="oCrunch">0%</output></label>
             <input type="range" id="fCrunch" min="0" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Filter freq <output id="oFreq">off</output></label>
@@ -362,8 +357,46 @@
           <div class="sl"><label>Volume <output id="oGain">100%</output></label>
             <input type="range" id="fGain" min="0" max="2" step="0.01" value="1"></div>
         </div>
+        <div class="fxcard" id="dlyCard">
+          <div class="fxcard-h" id="dlyHead">
+            <span class="fxcard-t">▾ DELAY</span>
+            <span class="fxcard-m" id="dlyMixRead">off</span>
+            <button class="mini" id="dFreeze" title="Latch the loop: input cut, feedback pinned">Freeze</button>
+          </div>
+          <div class="fxcard-b" id="dlyBody">
+            <div class="presets" style="margin-bottom:10px">
+              <button class="chip" data-dp="off">Off</button>
+              <button class="chip" data-c="amber" data-dp="tape">Tape</button>
+              <button class="chip" data-c="blue" data-dp="shimmer">Shimmer</button>
+              <button class="chip" data-c="red" data-dp="runaway">Runaway</button>
+              <button class="chip" data-c="green" data-dp="dub">Dub</button>
+            </div>
+            <div class="sliders">
+              <div class="sl"><label>Mix <output id="oDMix">off</output></label>
+                <input type="range" id="dMix" min="0" max="1" step="0.01" value="0"></div>
+              <div class="sl"><label>Time <output id="oDTime">0.34s</output></label>
+                <input type="range" id="dTime" min="0.02" max="2" step="0.01" value="0.34"></div>
+              <div class="sl"><label>Sync</label>
+                <select id="dSync"><option value="free">Free</option><option value="1/16">1/16</option><option value="1/8">1/8</option><option value="1/8d">1/8·</option><option value="1/4">1/4</option><option value="1/2">1/2</option></select></div>
+              <div class="sl"><label>Feedback <output id="oDFb">35%</output></label>
+                <input type="range" id="dFb" min="0" max="1.1" step="0.01" value="0.35"></div>
+              <div class="sl"><label>Tone <output id="oDTone">50%</output></label>
+                <input type="range" id="dTone" min="0" max="1" step="0.01" value="0.5"></div>
+              <div class="sl"><label>Pitch <output id="oDPitch">0 st</output></label>
+                <input type="range" id="dPitch" min="-12" max="12" step="1" value="0"></div>
+              <div class="sl"><label>Drive <output id="oDDrive">30%</output></label>
+                <input type="range" id="dDrive" min="0" max="1" step="0.01" value="0.3"></div>
+              <div class="sl"><label>Mod depth <output id="oDModD">off</output></label>
+                <input type="range" id="dModD" min="0" max="1" step="0.01" value="0"></div>
+              <div class="sl"><label>Mod rate <output id="oDModR">0.8 Hz</output></label>
+                <input type="range" id="dModR" min="0.05" max="8" step="0.05" value="0.8"></div>
+              <div class="sl"><label>Ping-pong</label>
+                <button class="mini" id="dPP">On</button></div>
+            </div>
+          </div>
+        </div>
+
         <div class="fx-foot">
-          <button class="hbtn" id="ppBtn">Ping-pong</button>
           <button class="hbtn" id="addTlBtn" disabled>＋ Timeline</button>
           <button class="hbtn primary" id="exportBtn" disabled>Export WAV</button>
           <span class="status" id="status"></span>
@@ -417,6 +450,82 @@
 <script>
 (() => {
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  // ---- character delay: whole feedback loop (pitch/tone/saturation) lives in one worklet ----
+  const CB_DELAY_SRC = `
+class CBDelay extends AudioWorkletProcessor{
+  static get parameterDescriptors(){return[
+    {name:'time',defaultValue:0.34,minValue:0.02,maxValue:3.8,automationRate:'a-rate'},
+    {name:'feedback',defaultValue:0.35,minValue:0,maxValue:1.15,automationRate:'k-rate'},
+    {name:'tone',defaultValue:0.5,minValue:0,maxValue:1,automationRate:'k-rate'},
+    {name:'pitch',defaultValue:0,minValue:-12,maxValue:12,automationRate:'k-rate'},
+    {name:'drive',defaultValue:0.3,minValue:0,maxValue:1,automationRate:'k-rate'},
+    {name:'freeze',defaultValue:0,minValue:0,maxValue:1,automationRate:'k-rate'},
+    {name:'pingpong',defaultValue:0,minValue:0,maxValue:1,automationRate:'k-rate'},
+    {name:'modDepth',defaultValue:0,minValue:0,maxValue:1,automationRate:'k-rate'},
+    {name:'modRate',defaultValue:0.8,minValue:0.05,maxValue:8,automationRate:'k-rate'}
+  ];}
+  constructor(){super();
+    this.N=Math.ceil(sampleRate*4.2);
+    this.b=[new Float32Array(this.N),new Float32Array(this.N)];
+    this.w=0;this.lp=[0,0];this.ph=0;this.mp=0;
+    this.W=Math.round(sampleRate*0.1);
+  }
+  tap(ch,delay){
+    let r=this.w-delay; r=((r%this.N)+this.N)%this.N;
+    const i0=r|0, fr=r-i0, i1=(i0+1)%this.N, d=this.b[ch];
+    return d[i0]+(d[i1]-d[i0])*fr;
+  }
+  process(inputs,outputs,pm){
+    const out=outputs[0], L=out[0], R=out[1]||out[0];
+    const inp=inputs[0];
+    const iL=inp&&inp[0]?inp[0]:null, iR=inp&&inp[1]?inp[1]:iL;
+    const n=L.length;
+    const fb=Math.min(1.15,pm.feedback[0]), tone=pm.tone[0], pitch=pm.pitch[0], drive=pm.drive[0];
+    const frz=pm.freeze[0]>0.5, pp=pm.pingpong[0]>0.5;
+    const modD=pm.modDepth[0], modR=pm.modRate[0];
+    const ratio=Math.pow(2,pitch/12), shift=Math.abs(pitch)>0.01;
+    const cut=300*Math.pow(16000/300,tone);
+    const a=1-Math.exp(-6.283185307*cut/sampleRate);
+    const dk=1+drive*4;
+    const phInc=(ratio-1)/this.W;
+    for(let i=0;i<n;i++){
+      this.mp+=modR/sampleRate; if(this.mp>=1)this.mp-=1;
+      const mod=Math.sin(this.mp*6.283185307)*modD*0.008*sampleRate;
+      const t=pm.time.length>1?pm.time[i]:pm.time[0];
+      const d=Math.max(this.W+64, Math.min(this.N-2, t*sampleRate+mod));
+      let rl,rr;
+      if(shift){
+        this.ph+=phInc; this.ph-=Math.floor(this.ph);
+        const p2=(this.ph+0.5)%1;
+        const gA=Math.sin(3.14159265*this.ph), gB=Math.sin(3.14159265*p2);
+        const oA=this.ph*this.W, oB=p2*this.W;
+        rl=this.tap(0,d+oA)*gA+this.tap(0,d+oB)*gB;
+        rr=this.tap(1,d+oA)*gA+this.tap(1,d+oB)*gB;
+      } else { rl=this.tap(0,d); rr=this.tap(1,d); }
+      this.lp[0]+=a*(rl-this.lp[0]); this.lp[1]+=a*(rr-this.lp[1]);
+      let pl=Math.tanh(this.lp[0]*dk)*(1-drive*0.25);
+      let pr=Math.tanh(this.lp[1]*dk)*(1-drive*0.25);
+      const im=frz?0:1, f=frz?1:fb;
+      const xl=iL?iL[i]:0, xr=iR?iR[i]:0;
+      if(pp){ this.b[0][this.w]=xl*im + pr*f; this.b[1][this.w]=pl*f; }
+      else { this.b[0][this.w]=xl*im + pl*f; this.b[1][this.w]=xr*im + pr*f; }
+      L[i]=pl; R[i]=pr;
+      this.w=(this.w+1)%this.N;
+    }
+    return true;
+  }
+}
+registerProcessor('cb-delay', CBDelay);`;
+  const workletURL = URL.createObjectURL(new Blob([CB_DELAY_SRC], {type:'application/javascript'}));
+  const workletMap = new WeakMap();
+  function ensureWorklet(c){
+    if (!workletMap.has(c)) workletMap.set(c, c.audioWorklet.addModule(workletURL));
+    return workletMap.get(c);
+  }
+  const mkDly = () => ({mix:0, time:0.34, sync:'free', feedback:0.35, tone:0.5, pitch:0, drive:0.3, mod:0, modRate:0.8, pingpong:false, freeze:false});
+  const dlyBeats = {'1/16':0.25,'1/8':0.5,'1/8d':0.75,'1/4':1,'1/2':2};
+  const dlyTimeSec = d => d.sync==='free' ? d.time : Math.min(3.8, dlyBeats[d.sync]*(60/sset.bpm));
+  const normalizeDly = p => p.dly ? p.dly : Object.assign(mkDly(), {mix:p.delay||0, feedback:(p.fb!=null?p.fb:0.35), pingpong:!!p.pingpong});
   const MIX_SR = 48000;
   let source = 'desktop';
   let mediaStream = null, recorder = null, recChunks = [];
@@ -478,7 +587,7 @@
 
   const $ = id => document.getElementById(id);
   const mkLfos = () => Array.from({length:4}, () => ({rate:1, depth:0, shape:'sine', sync:'free', dest:'off'}));
-  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, pingpong:false, lfos: mkLfos() };
+  const fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, lfos: mkLfos(), dly: mkDly() };
   const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
@@ -644,6 +753,8 @@
       } else if (clips.length){
         idSeq = Math.max(0,...clips.map(c=>c.id))+1;
       }
+      const bank = await getMeta('fxbank');
+      if (Array.isArray(bank) && bank.length === 5) userBank = bank;
       const tl = await getMeta('timeline');
       if (Array.isArray(tl)) timeline = tl.filter(it => clips.some(c=>c.id===it.clipId));
       if (clips.length) setStatus('Restored ' + clips.length + ' clip' + (clips.length>1?'s':'') + '.');
@@ -651,6 +762,7 @@
     if (!hadState) uiMode = 'simple';
     applyMode();
     syncMaster(); rebuildMaster();
+    renderFxBank();
     renderClips(); renderTimeline(); renderSteps();
     updateStoreInfo();
   }
@@ -852,7 +964,7 @@
     o.start(0);
     return { node: o, freqParam: o.frequency, freqScale: 1 };
   }
-  function buildChain(c, p){
+  async function buildChain(c, p){
     const lfoDefs = (p.lfos || []).map(l => ({...l}));
     const active = lfoDefs.map(l => (l && l.dest !== 'off' && l.depth > 0.005) ? l : null);
     const targeted = new Set(active.filter(Boolean).map(l => l.dest));
@@ -884,26 +996,32 @@
     }
     const post = c.createGain();
     node.connect(post);
-    let echoWet = null, echoFb = null, echoTimes = [];
-    if (p.delay > 0.01 || targeted.has('echomix') || targeted.has('echofb') || targeted.has('echotime')){
-      echoWet = c.createGain(); echoWet.gain.value = p.delay;
-      echoFb = c.createGain(); echoFb.gain.value = p.fb;
-      if (p.pingpong){
-        const dL = c.createDelay(1.2); dL.delayTime.value = 0.34;
-        const dR = c.createDelay(1.2); dR.delayTime.value = 0.34;
-        const merge = c.createChannelMerger(2);
-        node.connect(dL);
-        dL.connect(merge, 0, 0);
-        dL.connect(dR);
-        dR.connect(merge, 0, 1);
-        dR.connect(echoFb); echoFb.connect(dL);
-        merge.connect(echoWet); echoWet.connect(post);
-        echoTimes = [dL.delayTime, dR.delayTime];
-      } else {
-        const d = c.createDelay(1.2); d.delayTime.value = 0.34;
-        node.connect(d); d.connect(echoFb); echoFb.connect(d);
-        d.connect(echoWet); echoWet.connect(post);
-        echoTimes = [d.delayTime];
+    const dly = normalizeDly(p);
+    const dlyTargeted = targeted.has('dlymix') || targeted.has('dlytime') || targeted.has('dlyfb') || targeted.has('dlytone');
+    let dlyNode = null, dlyWet = null;
+    if (dly.mix > 0.005 || dly.freeze || dlyTargeted){
+      try{
+        await ensureWorklet(c);
+        dlyNode = new AudioWorkletNode(c, 'cb-delay', {outputChannelCount:[2]});
+        dlyNode.parameters.get('time').value = dlyTimeSec(dly);
+        dlyNode.parameters.get('feedback').value = dly.feedback;
+        dlyNode.parameters.get('tone').value = dly.tone;
+        dlyNode.parameters.get('pitch').value = dly.pitch;
+        dlyNode.parameters.get('drive').value = dly.drive;
+        dlyNode.parameters.get('freeze').value = dly.freeze ? 1 : 0;
+        dlyNode.parameters.get('pingpong').value = dly.pingpong ? 1 : 0;
+        dlyNode.parameters.get('modDepth').value = dly.mod;
+        dlyNode.parameters.get('modRate').value = dly.modRate;
+        node.connect(dlyNode);
+        dlyWet = c.createGain(); dlyWet.gain.value = dly.mix;
+        dlyNode.connect(dlyWet); dlyWet.connect(post);
+      }catch(e){
+        // no-worklet fallback: plain feedback delay, character features off
+        const d = c.createDelay(3.9); d.delayTime.value = dlyTimeSec(dly);
+        const fbG = c.createGain(); fbG.gain.value = Math.min(0.95, dly.feedback);
+        dlyWet = c.createGain(); dlyWet.gain.value = dly.mix;
+        node.connect(d); d.connect(fbG); fbG.connect(d);
+        d.connect(dlyWet); dlyWet.connect(post);
       }
     }
     let verbWet = null;
@@ -947,9 +1065,10 @@
         case 'filter':   if (filterNode) route(filterNode.frequency, filterNode.frequency.value * 0.85 * l.depth); break;
         case 'volume':   route(out.gain, p.gain * l.depth/2); break;
         case 'speed':    { const g = c.createGain(); g.gain.value = l.depth * 0.5 * p.rate; src.node.connect(g); speedMod = g; } break;
-        case 'echomix':  if (echoWet) route(echoWet.gain, l.depth * 0.5); break;
-        case 'echofb':   if (echoFb) route(echoFb.gain, l.depth * 0.4); break;
-        case 'echotime': echoTimes.forEach(t => route(t, l.depth * 0.15)); break;
+        case 'dlymix':  if (dlyWet) route(dlyWet.gain, l.depth * 0.5); break;
+        case 'dlyfb':   if (dlyNode) route(dlyNode.parameters.get('feedback'), l.depth * 0.4); break;
+        case 'dlytime': if (dlyNode) route(dlyNode.parameters.get('time'), l.depth * 0.15); break;
+        case 'dlytone': if (dlyNode) route(dlyNode.parameters.get('tone'), l.depth * 0.4); break;
         case 'verb':     if (verbWet) route(verbWet.gain, l.depth * 0.7); break;
         case 'crunch':   if (crunchWet){ route(crunchWet.gain, l.depth * 0.5); route(crunchDry.gain, -l.depth * 0.5); } break;
         default:
@@ -962,8 +1081,9 @@
       }
     }
     const lfoNodes = sources.filter(Boolean).map(s => s.node);
-    const tail = ((p.verb>0.01||targeted.has('verb'))?2.4:0) + ((p.delay>0.01||targeted.has('echomix'))?1.5:0);
-    return { input, out, tail, lfos: lfoNodes, speedMod };
+    const dlyActive = !!dlyWet;
+    const tail = ((p.verb>0.01||targeted.has('verb'))?2.4:0) + (dlyActive ? Math.min(4, 1.2 + dlyTimeSec(dly)*(dly.feedback>0.85?4:2)) : 0);
+    return { input, out, tail, lfos: lfoNodes, speedMod, dlyNode, dlyWet };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -990,11 +1110,13 @@
     const offset = item.reversed ? clip.duration - item.trimB : item.trimA;
     const dur = Math.min(item.trimB, clip.duration) - item.trimA;
     const coreDur = dur / p.rate;
-    const chainProbe = (p.verb>0.01?2.4:0) + (p.delay>0.01?1.5:0);
+    const dprobe = normalizeDly(p);
+    const dlyTail = (dprobe.mix>0.005 || dprobe.freeze) ? Math.min(4, 1.2 + dlyTimeSec(dprobe)*(dprobe.feedback>0.85?4:2)) : 0;
+    const chainProbe = (p.verb>0.01?2.4:0) + dlyTail;
     const oc = new OfflineAudioContext(2, Math.max(1, Math.ceil((coreDur + chainProbe) * MIX_SR)), MIX_SR);
     const src = oc.createBufferSource();
     src.buffer = base; src.playbackRate.value = p.rate;
-    const chain = buildChain(oc, p);
+    const chain = await buildChain(oc, p);
     applyFades(chain.out.gain, 0, coreDur, p);
     src.connect(chain.input);
     if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
@@ -1005,7 +1127,7 @@
   }
   const snapshotCurrent = () => ({
     uid: uidSeq++, clipId: cur.id, name: cur.name,
-    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l}))}
+    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l})), dly: {...fx.dly}}
   });
 
   // ================= recording =================
@@ -1433,8 +1555,6 @@
   bind('fRate','rate','oRate', v=>v.toFixed(2)+'×');
   bind('fPitch','pitch','oPitch', v=>(v>0?'+':'')+v+' st');
   bind('fVerb','verb','oVerb', v=>Math.round(v*100)+'%');
-  bind('fDelay','delay','oDelay', v=>Math.round(v*100)+'%');
-  bind('fFb','fb','oFb', v=>Math.round(v*100)+'%');
   bind('fCrunch','crunch','oCrunch', v=>Math.round(v*100)+'%');
   bind('fFreq','freq','oFreq', v=> v>0.994 ? 'off' : Math.round(80*Math.pow(14000/80,v))+' Hz');
   bind('fFadeIn','fadeIn','oFadeIn', v=>v.toFixed(1)+'s');
@@ -1442,11 +1562,6 @@
   bind('fGain','gain','oGain', v=>Math.round(v*100)+'%');
   const panFmt = v => Math.abs(v)<0.01 ? 'C' : (v<0?'L':'R')+Math.abs(Math.round(v*100));
   bind('fPan','pan','oPan', panFmt);
-  $('ppBtn').onclick = () => {
-    fx.pingpong = !fx.pingpong;
-    $('ppBtn').classList.toggle('toggled', fx.pingpong);
-    restartIfPlaying();
-  };
   // input gain — live-adjustable while recording
   $('inGain').addEventListener('input', e => {
     inGainDb = parseFloat(e.target.value);
@@ -1494,7 +1609,7 @@
   // ---- LFO section UI ----
   const LFO_DESTS = [
     ['off','Off'],['pan','Pan'],['filter','Filter'],['volume','Volume'],['speed','Speed'],
-    ['echomix','Echo mix'],['echotime','Echo time'],['echofb','Echo feedback'],['verb','Reverb'],['crunch','Crunch']
+    ['dlymix','Delay mix'],['dlytime','Delay time'],['dlyfb','Delay feedbk'],['dlytone','Delay tone'],['verb','Reverb'],['crunch','Crunch']
   ];
   function buildLfoUI(){
     const box = $('lfoRows');
@@ -1552,10 +1667,141 @@
       });
     });
   }
+  // ---- delay module UI ----
+  function liveDlyParam(name, val){
+    for (const ch of [playing && playing.chain, seq.on && seq.chain]){
+      if (!ch) continue;
+      if (name === 'mix'){ if (ch.dlyWet) ch.dlyWet.gain.setTargetAtTime(val, ctx.currentTime, 0.02); }
+      else if (ch.dlyNode){ const p = ch.dlyNode.parameters.get(name); if (p) p.setTargetAtTime(val, ctx.currentTime, 0.02); }
+    }
+  }
+  const dlyNeedsBuild = () => (playing || seq.on) && !( (playing && playing.chain.dlyWet) || (seq.on && seq.chain.dlyWet) );
+  const dbind = (id, key, out, fmt, param, map) => {
+    $(id).addEventListener('input', e => {
+      fx.dly[key] = parseFloat(e.target.value);
+      $(out).textContent = fmt(fx.dly[key]);
+      if (dlyNeedsBuild()) { restartIfPlaying(); return; } // delay was off — spin the node up
+      if (param) liveDlyParam(param, map ? map(fx.dly[key]) : fx.dly[key]);
+      syncDlyHead();
+    });
+  };
+  dbind('dMix','mix','oDMix', v=>v<0.01?'off':Math.round(v*100)+'%', 'mix');
+  dbind('dTime','time','oDTime', v=>v.toFixed(2)+'s', 'time');
+  dbind('dFb','feedback','oDFb', v=>Math.round(v*100)+'%', 'feedback');
+  dbind('dTone','tone','oDTone', v=>Math.round(v*100)+'%', 'tone');
+  dbind('dPitch','pitch','oDPitch', v=>(v>0?'+':'')+v+' st', 'pitch');
+  dbind('dDrive','drive','oDDrive', v=>Math.round(v*100)+'%', 'drive');
+  dbind('dModD','mod','oDModD', v=>v<0.01?'off':Math.round(v*100)+'%', 'modDepth');
+  dbind('dModR','modRate','oDModR', v=>v.toFixed(2)+' Hz', 'modRate');
+  $('dSync').addEventListener('change', e => {
+    fx.dly.sync = e.target.value;
+    $('dTime').disabled = fx.dly.sync !== 'free';
+    $('dTime').style.opacity = fx.dly.sync !== 'free' ? .4 : 1;
+    liveDlyParam('time', dlyTimeSec(fx.dly));
+    if (dlyNeedsBuild()) restartIfPlaying();
+    syncDlyHead();
+  });
+  $('dPP').onclick = () => {
+    fx.dly.pingpong = !fx.dly.pingpong;
+    $('dPP').classList.toggle('toggled', fx.dly.pingpong);
+    liveDlyParam('pingpong', fx.dly.pingpong ? 1 : 0);
+    if (dlyNeedsBuild()) restartIfPlaying();
+  };
+  $('dFreeze').onclick = () => {
+    fx.dly.freeze = !fx.dly.freeze;
+    $('dFreeze').classList.toggle('hot', fx.dly.freeze);
+    if (dlyNeedsBuild()) { restartIfPlaying(); return; }
+    liveDlyParam('freeze', fx.dly.freeze ? 1 : 0);
+  };
+  $('dlyHead').addEventListener('click', e => {
+    if (e.target.id === 'dFreeze') return;
+    $('dlyCard').classList.toggle('closed');
+    $('dlyHead').querySelector('.fxcard-t').textContent = ($('dlyCard').classList.contains('closed') ? '▸' : '▾') + ' DELAY';
+  });
+  function syncDlyHead(){
+    const d = fx.dly;
+    $('dlyMixRead').textContent = d.mix<0.01 && !d.freeze ? 'off'
+      : Math.round(d.mix*100)+'% · ' + (d.sync==='free' ? d.time.toFixed(2)+'s' : d.sync) + ' · fb '+Math.round(d.feedback*100)+'%' + (d.pitch? ' · '+(d.pitch>0?'+':'')+d.pitch+'st':'');
+  }
+  function syncDly(){
+    const d = fx.dly;
+    $('dMix').value=d.mix; $('oDMix').textContent=d.mix<0.01?'off':Math.round(d.mix*100)+'%';
+    $('dTime').value=d.time; $('oDTime').textContent=d.time.toFixed(2)+'s';
+    $('dSync').value=d.sync;
+    $('dTime').disabled = d.sync!=='free'; $('dTime').style.opacity = d.sync!=='free'?.4:1;
+    $('dFb').value=d.feedback; $('oDFb').textContent=Math.round(d.feedback*100)+'%';
+    $('dTone').value=d.tone; $('oDTone').textContent=Math.round(d.tone*100)+'%';
+    $('dPitch').value=d.pitch; $('oDPitch').textContent=(d.pitch>0?'+':'')+d.pitch+' st';
+    $('dDrive').value=d.drive; $('oDDrive').textContent=Math.round(d.drive*100)+'%';
+    $('dModD').value=d.mod; $('oDModD').textContent=d.mod<0.01?'off':Math.round(d.mod*100)+'%';
+    $('dModR').value=d.modRate; $('oDModR').textContent=d.modRate.toFixed(2)+' Hz';
+    $('dPP').classList.toggle('toggled', d.pingpong);
+    $('dFreeze').classList.toggle('hot', d.freeze);
+    syncDlyHead();
+  }
+  const DLY_PRESETS = {
+    off:     mkDly(),
+    tape:    {mix:0.35, time:0.42, sync:'free', feedback:0.5, tone:0.32, pitch:0, drive:0.55, mod:0.3, modRate:0.7, pingpong:false, freeze:false},
+    shimmer: {mix:0.5, time:0.5, sync:'1/4', feedback:0.72, tone:0.85, pitch:12, drive:0.15, mod:0.05, modRate:0.4, pingpong:false, freeze:false},
+    runaway: {mix:0.5, time:0.28, sync:'free', feedback:1.05, tone:0.45, pitch:0, drive:0.6, mod:0.1, modRate:1.2, pingpong:true, freeze:false},
+    dub:     {mix:0.55, time:0.5, sync:'1/8d', feedback:0.65, tone:0.35, pitch:0, drive:0.4, mod:0.12, modRate:0.5, pingpong:true, freeze:false}
+  };
+  document.querySelectorAll('.chip[data-dp]').forEach(ch => ch.onclick = () => {
+    fx.dly = {...mkDly(), ...DLY_PRESETS[ch.dataset.dp]};
+    syncDly(); restartIfPlaying();
+  });
+
+  // ---- FX preset bank: 5 factory + 5 user (persisted) ----
+  const deepFx = f => ({...f, lfos: f.lfos.map(l=>({...l})), dly: {...f.dly}});
+  const mkFactory = over => { const f = fxDefaults(); Object.assign(f, over.base||{}); if (over.dly) f.dly = {...f.dly, ...over.dly}; if (over.lfo0) f.lfos[0] = {...f.lfos[0], ...over.lfo0}; return f; };
+  const FACTORY = [
+    {name:'Clean',     fx: mkFactory({})},
+    {name:'Chipmunk',  fx: mkFactory({base:{rate:1.6}})},
+    {name:'Telephone', fx: mkFactory({base:{type:'bandpass', freq:0.58, crunch:0.25}})},
+    {name:'Cave',      fx: mkFactory({base:{verb:0.85}})},
+    {name:'Dub',       fx: mkFactory({base:{verb:0.2}, dly:DLY_PRESETS.dub})}
+  ];
+  let userBank = [null,null,null,null,null];
+  function applyFxPreset(obj){
+    Object.assign(fx, fxDefaults(), deepFx(obj));
+    syncControls(); syncSimple(); buildLfoUI(); syncDly(); restartIfPlaying();
+  }
+  function renderFxBank(){
+    const row = $('fxBankRow');
+    row.innerHTML = '';
+    FACTORY.forEach(f => {
+      const b = document.createElement('button');
+      b.className = 'chip'; b.dataset.c = 'blue';
+      b.textContent = f.name;
+      b.onclick = () => { applyFxPreset(f.fx); setStatus('Loaded ' + f.name + '.'); };
+      row.appendChild(b);
+    });
+    userBank.forEach((slot, i) => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      if (slot) b.dataset.c = 'amber';
+      b.textContent = 'U' + (i+1) + (slot ? '' : ' ·');
+      b.title = slot ? 'Click to load · right-click to overwrite' : 'Click to save current effects here';
+      b.onclick = () => {
+        if (slot){ applyFxPreset(slot); setStatus('Loaded U' + (i+1) + '.'); }
+        else { userBank[i] = deepFx(fx); saveFxBank(); renderFxBank(); setStatus('Saved to U' + (i+1) + '.'); }
+      };
+      b.oncontextmenu = e => {
+        e.preventDefault();
+        userBank[i] = deepFx(fx);
+        saveFxBank(); renderFxBank();
+        setStatus('Saved to U' + (i+1) + '.');
+      };
+      row.appendChild(b);
+    });
+  }
+  const saveFxBank = () => tx('meta','readwrite', s => s.put(userBank, 'fxbank')).catch(()=>{});
+
   // double-click any slider to snap it back to neutral
   const SLIDER_DEFAULTS = {
-    fRate:1, fPitch:0, fPan:0, fVerb:0, fDelay:0, fFb:0.35,
+    fRate:1, fPitch:0, fPan:0, fVerb:0,
     fCrunch:0, fFreq:1, fFadeIn:0, fFadeOut:0, fGain:1,
+    dMix:0, dTime:0.34, dFb:0.35, dTone:0.5, dPitch:0, dDrive:0.3, dModD:0, dModR:0.8,
     xRate:1, xVerb:0, xGain:1,
     sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
     fCross:0, inGain:0, mThr:-24, mRatio:4, mMakeup:0
@@ -1587,24 +1833,11 @@
     $('xVerb').value = fx.verb; $('oxVerb').textContent = Math.round(fx.verb*100)+'%';
     $('xGain').value = fx.gain; $('oxGain').textContent = Math.round(fx.gain*100)+'%';
   }
-  const presets = {
-    chipmunk:{rate:1.6}, deep:{rate:0.62},
-    phone:{type:'bandpass', freq:0.58, crunch:0.25},
-    cave:{verb:0.85}, echo:{delay:0.6, fb:0.55, verb:0.2, pingpong:true},
-    crunch:{crunch:0.8, gain:0.8},
-    clean:{}
-  };
-  const fxDefaults = () => ({rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,pingpong:false,lfos:mkLfos()});
-  document.querySelectorAll('.chip[data-p]').forEach(ch => ch.onclick = () => {
-    Object.assign(fx, fxDefaults(), presets[ch.dataset.p]);
-    syncControls(); syncSimple(); buildLfoUI(); restartIfPlaying();
-  });
+  const fxDefaults = () => ({rate:1,pitch:0,verb:0,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,lfos:mkLfos(),dly:mkDly()});
   function syncControls(){
     $('fRate').value=fx.rate; $('oRate').textContent=fx.rate.toFixed(2)+'×';
     $('fPitch').value=fx.pitch; $('oPitch').textContent=(fx.pitch>0?'+':'')+fx.pitch+' st';
     $('fVerb').value=fx.verb; $('oVerb').textContent=Math.round(fx.verb*100)+'%';
-    $('fDelay').value=fx.delay; $('oDelay').textContent=Math.round(fx.delay*100)+'%';
-    $('fFb').value=fx.fb; $('oFb').textContent=Math.round(fx.fb*100)+'%';
     $('fCrunch').value=fx.crunch; $('oCrunch').textContent=Math.round(fx.crunch*100)+'%';
     $('fFreq').value=fx.freq; $('oFreq').textContent = fx.freq>0.994?'off':Math.round(80*Math.pow(14000/80,fx.freq))+' Hz';
     $('fType').value=fx.type;
@@ -1612,7 +1845,6 @@
     $('fFadeOut').value=fx.fadeOut; $('oFadeOut').textContent=fx.fadeOut.toFixed(1)+'s';
     $('fGain').value=fx.gain; $('oGain').textContent=Math.round(fx.gain*100)+'%';
     $('fPan').value=fx.pan; $('oPan').textContent=panFmt(fx.pan);
-    $('ppBtn').classList.toggle('toggled', !!fx.pingpong);
   }
   $('revBtn').onclick = () => {
     reversed = !reversed;
@@ -1645,7 +1877,7 @@
     const src = ctx.createBufferSource();
     src.buffer = buf; src.playbackRate.value = fx.rate;
     if (looping){ src.loop = true; src.loopStart = offset; src.loopEnd = offset + dur; }
-    const chain = buildChain(ctx, fx);
+    const chain = await buildChain(ctx, fx);
     src.connect(chain.input);
     if (chain.speedMod) chain.speedMod.connect(src.playbackRate);
     const tailNode = chain.out;
@@ -1744,7 +1976,7 @@
     const bufN = await getSourceBuffer(cur, false, fx.pitch);
     const bufR = await getSourceBuffer(cur, true, fx.pitch);
     if (!cur) return;
-    const chain = buildChain(ctx, fx);
+    const chain = await buildChain(ctx, fx);
     const tailNode = chain.out;
     tailNode.connect(master.in);
     const stepDur = STEP();
@@ -2079,10 +2311,12 @@
     const bufR = await getSourceBuffer(srcClip, true, fx.pitch);
     const stepDur = STEP();
     const steps = sset.len * sset.passes;
-    const tail = (fx.verb>0.01?2.4:0) + (fx.delay>0.01?1.5:0) + 0.3;
+    const bDly = fx.dly;
+    const bDlyTail = (bDly.mix>0.005 || bDly.freeze) ? Math.min(4, 1.2 + dlyTimeSec(bDly)*(bDly.feedback>0.85?4:2)) : 0;
+    const tail = (fx.verb>0.01?2.4:0) + bDlyTail + 0.3;
     const totalDur = stepTimeOf(steps, 0.02, stepDur) + tail;
     const oc = new OfflineAudioContext(2, Math.ceil(totalDur * MIX_SR), MIX_SR);
-    const chain = buildChain(oc, fx);
+    const chain = await buildChain(oc, fx);
     chain.out.connect(oc.destination);
     for (let abs=0; abs<steps; abs++){
       const stepIdx = abs % sset.len;
@@ -2099,7 +2333,7 @@
     addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed, false);
     // the FX are printed into the bounce — reset the live chain so playback isn't double-processed
     Object.assign(fx, fxDefaults());
-    syncControls(); syncSimple(); buildLfoUI();
+    syncControls(); syncSimple(); buildLfoUI(); syncDly();
     setSlStatus('Bounced → shelf · FX printed, chain reset.');
   };
 
@@ -2288,6 +2522,8 @@
   syncMaster();
   rebuildMaster();
   buildLfoUI();
+  syncDly();
+  renderFxBank();
   renderSteps();
   drawWave();
   restore();
