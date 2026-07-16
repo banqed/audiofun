@@ -106,6 +106,14 @@
   .fxcard-b{padding:0 12px 14px}
   .fxcard.closed .fxcard-b{display:none}
   .mini.hot{background:var(--rec);color:#fff}
+  .chain-conn{font-family:var(--mono);font-size:9px;letter-spacing:.08em;color:var(--ink-soft);padding:3px 0 3px 20px;user-select:none}
+  .drag-h{cursor:grab;font-size:15px;color:var(--ink-soft);padding:0 2px;user-select:none}
+  .fed{color:var(--green);font-size:10px}
+  .fxcard.bypassed{opacity:.5}
+  .fxcard-h{flex-wrap:wrap}
+  .fxcard-h .sl{min-width:150px;margin-left:8px}
+  .fxcard-b .sliders{margin-top:4px}
+  .card-note{font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:2px 0 6px}
   .status{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
   .sl-row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
   .sl-row .sl{min-width:0}
@@ -153,7 +161,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.10</small></h1>
+      <h1>CLIPDECK <small>v0.11</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -359,7 +367,10 @@
           <div class="sl"><label>Volume <output id="oGain">100%</output></label>
             <input type="range" id="fGain" min="0" max="2" step="0.01" value="1"></div>
         </div>
-        <div class="fxcard" id="dlyCard">
+        <div class="label" style="margin-top:14px">Chain <span>drag ≡ to reorder · ⏻ bypass · → serial feeds next · ⤂ parallel returns at end</span></div>
+        <div id="chainRows"></div>
+        <div id="cardParts" style="display:none"></div>
+        <div class="fxcard" id="dlyCard" style="display:none">
           <div class="fxcard-h" id="dlyHead">
             <span class="fxcard-t">▾ DELAY</span>
             <span class="fxcard-m" id="dlyMixRead">off</span>
@@ -531,8 +542,24 @@ registerProcessor('cb-delay', CBDelay);`;
   const dlyBeats = {'1/16':0.25,'1/8':0.5,'1/8d':0.75,'1/4':1,'1/2':2};
   const dlyTimeSec = d => d.sync==='free' ? d.time : Math.min(3.8, dlyBeats[d.sync]*(60/sset.bpm));
   const normalizeDly = p => p.dly ? p.dly : Object.assign(mkDly(), {mix:p.delay||0, feedback:(p.fb!=null?p.fb:0.35), pingpong:!!p.pingpong});
-  // interim equal-power dry law until per-card serial mixes (v0.11): loudest wet claim pulls dry down
-  const dryLevelFx = p => Math.cos(Math.PI/2 * Math.min(1, Math.max(normalizeDly(p).mix, p.verb||0)));
+  // the chain: ordered cards, each serial (feeds next) or parallel (branches, returns at end of chain)
+  const CARD_IDS = ['crunch','filter','delay','reverb'];
+  const mkChain = () => [
+    {id:'crunch', mode:'serial',   on:true},
+    {id:'filter', mode:'serial',   on:true},
+    {id:'delay',  mode:'parallel', on:true},
+    {id:'reverb', mode:'parallel', on:true}
+  ];
+  // pre-chain fx states (and factory presets without a chain) reproduce the old routing exactly
+  const normalizeChain = p => {
+    if (Array.isArray(p.chain) && p.chain.length){
+      const out = p.chain.filter(cd => CARD_IDS.includes(cd.id))
+        .map(cd => ({id:cd.id, mode:cd.mode==='parallel'?'parallel':'serial', on:cd.on!==false}));
+      for (const id of CARD_IDS) if (!out.some(cd => cd.id===id)) out.push(mkChain().find(cd => cd.id===id));
+      return out;
+    }
+    return mkChain();
+  };
   const MIX_SR = 48000;
   let source = 'desktop';
   let mediaStream = null, recorder = null, recChunks = [];
@@ -594,7 +621,7 @@ registerProcessor('cb-delay', CBDelay);`;
 
   const $ = id => document.getElementById(id);
   const mkLfos = () => Array.from({length:4}, () => ({rate:1, depth:0, shape:'sine', sync:'free', dest:'off'}));
-  const fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, lfos: mkLfos(), dly: mkDly() };
+  const fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, filterMix:1, lfos: mkLfos(), dly: mkDly(), chain: mkChain() };
   const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
@@ -978,71 +1005,122 @@ registerProcessor('cb-delay', CBDelay);`;
     const targeted = new Set(active.filter(Boolean).map(l => l.dest));
 
     const input = c.createGain();
-    let node = input;
-    // crunch as parallel dry/wet so the amount is a modulation target
-    let crunchWet = null, crunchDry = null, crunchWS = null;
-    if (p.crunch > 0.01 || targeted.has('crunch')){
-      const ws = c.createWaveShaper();
-      ws.curve = distortionCurve(Math.pow(Math.max(p.crunch, 0.15), 1.8)); // perceptual taper
-      ws.oversample = '2x';
-      crunchWS = ws;
-      const sum = c.createGain();
-      crunchDry = c.createGain(); crunchDry.gain.value = Math.cos(p.crunch*Math.PI/2);
-      crunchWet = c.createGain(); crunchWet.gain.value = Math.sin(p.crunch*Math.PI/2);
-      node.connect(crunchDry); crunchDry.connect(sum);
-      node.connect(ws); ws.connect(crunchWet); crunchWet.connect(sum);
-      node = sum;
-    }
-    let filterNode = null;
-    if (p.freq < 0.995 || targeted.has('filter')){
-      const f = c.createBiquadFilter();
-      f.type = p.type;
-      const effFreq = p.freq < 0.995 ? p.freq : 0.6;
-      f.frequency.value = 80 * Math.pow(14000/80, effFreq);
-      if (p.type==='bandpass') f.Q.value = 1.2;
-      filterNode = f;
-      node.connect(f); node = f;
-    }
-    const post = c.createGain();
-    const dryG = c.createGain();
-    dryG.gain.value = dryLevelFx(p);
-    node.connect(dryG); dryG.connect(post);
+    const post = c.createGain();               // chain sum: serial main path + parallel returns
+    const chainCfg = normalizeChain(p);
     const dly = normalizeDly(p);
-    const dlyTargeted = targeted.has('dlymix') || targeted.has('dlytime') || targeted.has('dlyfb') || targeted.has('dlytone');
-    let dlyNode = null, dlyWet = null;
-    if (dly.mix > 0.005 || dly.freeze || dlyTargeted){
-      try{
-        await ensureWorklet(c);
-        dlyNode = new AudioWorkletNode(c, 'cb-delay', {outputChannelCount:[2]});
-        dlyNode.parameters.get('time').value = dlyTimeSec(dly);
-        dlyNode.parameters.get('feedback').value = dly.feedback;
-        dlyNode.parameters.get('tone').value = dly.tone;
-        dlyNode.parameters.get('pitch').value = dly.pitch;
-        dlyNode.parameters.get('drive').value = dly.drive;
-        dlyNode.parameters.get('freeze').value = dly.freeze ? 1 : 0;
-        dlyNode.parameters.get('pingpong').value = dly.pingpong ? 1 : 0;
-        dlyNode.parameters.get('modDepth').value = dly.mod;
-        dlyNode.parameters.get('modRate').value = dly.modRate;
-        node.connect(dlyNode);
-        dlyWet = c.createGain(); dlyWet.gain.value = Math.sin(Math.PI/2*dly.mix);
-        dlyNode.connect(dlyWet); dlyWet.connect(post);
-      }catch(e){
-        // no-worklet fallback: plain feedback delay, character features off
-        const d = c.createDelay(3.9); d.delayTime.value = dlyTimeSec(dly);
-        const fbG = c.createGain(); fbG.gain.value = Math.min(0.95, dly.feedback);
-        dlyWet = c.createGain(); dlyWet.gain.value = Math.sin(Math.PI/2*dly.mix);
-        node.connect(d); d.connect(fbG); fbG.connect(d);
-        d.connect(dlyWet); dlyWet.connect(post);
+    const fMix = (p.filterMix != null ? p.filterMix : 1);
+    let main = input;
+    const returns = [];
+    let crunchWet=null, crunchDry=null, crunchWS=null, crunchMode='serial';
+    let filterNode=null, filterWet=null, filterDry=null, filterMode='serial';
+    let dlyNode=null, dlyWet=null, dlyDry=null, dlyMode='parallel';
+    let verbWet=null, verbDry=null, verbMode='parallel';
+    for (const card of chainCfg){
+      if (!card.on) continue;
+      const tap = main; // parallel cards hear the main path at their position
+      if (card.id === 'crunch' && (p.crunch > 0.01 || targeted.has('crunch'))){
+        crunchMode = card.mode;
+        const ws = c.createWaveShaper();
+        ws.curve = distortionCurve(Math.pow(Math.max(p.crunch, 0.15), 1.8));
+        ws.oversample = '2x';
+        crunchWS = ws;
+        if (card.mode === 'serial'){
+          const sum = c.createGain();
+          crunchDry = c.createGain(); crunchDry.gain.value = Math.cos(p.crunch*Math.PI/2);
+          crunchWet = c.createGain(); crunchWet.gain.value = Math.sin(p.crunch*Math.PI/2);
+          tap.connect(crunchDry); crunchDry.connect(sum);
+          tap.connect(ws); ws.connect(crunchWet); crunchWet.connect(sum);
+          main = sum;
+        } else {
+          crunchWet = c.createGain(); crunchWet.gain.value = p.crunch; // send level
+          tap.connect(ws); ws.connect(crunchWet);
+          returns.push(crunchWet);
+        }
+      }
+      else if (card.id === 'filter' && (p.freq < 0.995 || targeted.has('filter') || targeted.has('filtermix'))){
+        filterMode = card.mode;
+        const f = c.createBiquadFilter();
+        f.type = p.type;
+        const effFreq = p.freq < 0.995 ? p.freq : 0.6;
+        f.frequency.value = 80 * Math.pow(14000/80, effFreq);
+        if (p.type === 'bandpass') f.Q.value = 1.2;
+        filterNode = f;
+        if (card.mode === 'serial'){
+          if (fMix >= 0.995 && !targeted.has('filtermix')){
+            tap.connect(f); main = f;
+          } else {
+            const sum = c.createGain();
+            filterDry = c.createGain(); filterDry.gain.value = Math.cos(fMix*Math.PI/2);
+            filterWet = c.createGain(); filterWet.gain.value = Math.sin(fMix*Math.PI/2);
+            tap.connect(filterDry); filterDry.connect(sum);
+            tap.connect(f); f.connect(filterWet); filterWet.connect(sum);
+            main = sum;
+          }
+        } else {
+          filterWet = c.createGain(); filterWet.gain.value = fMix;
+          tap.connect(f); f.connect(filterWet);
+          returns.push(filterWet);
+        }
+      }
+      else if (card.id === 'delay'){
+        const dlyTargeted = targeted.has('dlymix') || targeted.has('dlytime') || targeted.has('dlyfb') || targeted.has('dlytone');
+        if (!(dly.mix > 0.005 || dly.freeze || dlyTargeted)) continue;
+        dlyMode = card.mode;
+        let dOut = null;
+        try{
+          await ensureWorklet(c);
+          dlyNode = new AudioWorkletNode(c, 'cb-delay', {outputChannelCount:[2]});
+          dlyNode.parameters.get('time').value = dlyTimeSec(dly);
+          dlyNode.parameters.get('feedback').value = dly.feedback;
+          dlyNode.parameters.get('tone').value = dly.tone;
+          dlyNode.parameters.get('pitch').value = dly.pitch;
+          dlyNode.parameters.get('drive').value = dly.drive;
+          dlyNode.parameters.get('freeze').value = dly.freeze ? 1 : 0;
+          dlyNode.parameters.get('pingpong').value = dly.pingpong ? 1 : 0;
+          dlyNode.parameters.get('modDepth').value = dly.mod;
+          dlyNode.parameters.get('modRate').value = dly.modRate;
+          tap.connect(dlyNode);
+          dOut = dlyNode;
+        }catch(e){
+          const d = c.createDelay(3.9); d.delayTime.value = dlyTimeSec(dly);
+          const fbG = c.createGain(); fbG.gain.value = Math.min(0.95, dly.feedback);
+          tap.connect(d); d.connect(fbG); fbG.connect(d);
+          dOut = d;
+        }
+        if (card.mode === 'serial'){
+          const sum = c.createGain();
+          dlyDry = c.createGain(); dlyDry.gain.value = Math.cos(dly.mix*Math.PI/2);
+          dlyWet = c.createGain(); dlyWet.gain.value = Math.sin(Math.PI/2*dly.mix);
+          tap.connect(dlyDry); dlyDry.connect(sum);
+          dOut.connect(dlyWet); dlyWet.connect(sum);
+          main = sum;
+        } else {
+          dlyWet = c.createGain(); dlyWet.gain.value = dly.mix; // send level
+          dOut.connect(dlyWet);
+          returns.push(dlyWet);
+        }
+      }
+      else if (card.id === 'reverb' && (p.verb > 0.01 || targeted.has('verb'))){
+        verbMode = card.mode;
+        const cv = c.createConvolver();
+        cv.buffer = (c === ctx && reverbIR) ? reverbIR : makeImpulse(c);
+        if (c === ctx && !reverbIR) reverbIR = cv.buffer;
+        if (card.mode === 'serial'){
+          const sum = c.createGain();
+          verbDry = c.createGain(); verbDry.gain.value = Math.cos(p.verb*Math.PI/2);
+          verbWet = c.createGain(); verbWet.gain.value = Math.sin(Math.PI/2*p.verb)*2.0;
+          tap.connect(verbDry); verbDry.connect(sum);
+          tap.connect(cv); cv.connect(verbWet); verbWet.connect(sum);
+          main = sum;
+        } else {
+          verbWet = c.createGain(); verbWet.gain.value = p.verb*2.0; // gain-compensated send
+          tap.connect(cv); cv.connect(verbWet);
+          returns.push(verbWet);
+        }
       }
     }
-    let verbWet = null;
-    if (p.verb > 0.01 || targeted.has('verb')){
-      const cv = c.createConvolver();
-      cv.buffer = (c === ctx && reverbIR) ? reverbIR : makeImpulse(c);
-      if (c === ctx && !reverbIR) reverbIR = cv.buffer;
-      verbWet = c.createGain(); verbWet.gain.value = Math.sin(Math.PI/2*p.verb)*2.0; // gain-compensated wet return
-      node.connect(cv); cv.connect(verbWet); verbWet.connect(post);
-    }
+    main.connect(post);
+    for (const r of returns) r.connect(post);
     const panner = c.createStereoPanner();
     const basePan = Math.max(-1, Math.min(1, p.pan || 0));
     panner.pan.value = basePan;
@@ -1075,6 +1153,7 @@ registerProcessor('cb-delay', CBDelay);`;
       switch (l.dest){
         case 'pan':      route(panner.pan, Math.min(1, l.depth) * (1 - Math.abs(basePan))); break;
         case 'filter':   if (filterNode) route(filterNode.frequency, filterNode.frequency.value * 0.85 * l.depth); break;
+        case 'filtermix': if (filterWet) route(filterWet.gain, l.depth * 0.5); break;
         case 'volume':   route(out.gain, p.gain * l.depth/2); break;
         case 'speed':    { const g = c.createGain(); g.gain.value = l.depth * 0.5 * p.rate; src.node.connect(g); speedMod = g; } break;
         case 'dlymix':  if (dlyWet) route(dlyWet.gain, l.depth * 0.5); break;
@@ -1082,7 +1161,7 @@ registerProcessor('cb-delay', CBDelay);`;
         case 'dlytime': if (dlyNode) route(dlyNode.parameters.get('time'), l.depth * 0.15); break;
         case 'dlytone': if (dlyNode) route(dlyNode.parameters.get('tone'), l.depth * 0.4); break;
         case 'verb':     if (verbWet) route(verbWet.gain, l.depth * 0.7); break;
-        case 'crunch':   if (crunchWet){ route(crunchWet.gain, l.depth * 0.5); route(crunchDry.gain, -l.depth * 0.5); } break;
+        case 'crunch':   if (crunchWet){ route(crunchWet.gain, l.depth * 0.5); if (crunchDry) route(crunchDry.gain, -l.depth * 0.5); } break;
         default:
           if (l.dest.startsWith('lfo')){
             const j = parseInt(l.dest.slice(3),10) - 1;
@@ -1095,7 +1174,7 @@ registerProcessor('cb-delay', CBDelay);`;
     const lfoNodes = sources.filter(Boolean).map(s => s.node);
     const dlyActive = !!dlyWet;
     const tail = ((p.verb>0.01||targeted.has('verb'))?2.4:0) + (dlyActive ? Math.min(4, 1.2 + dlyTimeSec(dly)*(dly.feedback>0.85?4:2)) : 0);
-    return { input, out, tail, lfos: lfoNodes, speedMod, dlyNode, dlyWet, filterNode, verbWet, crunchWet, crunchDry, crunchWS, dryG, panner, volHead };
+    return { input, out, tail, lfos: lfoNodes, speedMod, dlyNode, dlyWet, dlyDry, dlyMode, filterNode, filterWet, filterDry, filterMode, verbWet, verbDry, verbMode, crunchWet, crunchDry, crunchWS, crunchMode, panner, volHead };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -1139,7 +1218,7 @@ registerProcessor('cb-delay', CBDelay);`;
   }
   const snapshotCurrent = () => ({
     uid: uidSeq++, clipId: cur.id, name: cur.name,
-    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l})), dly: {...fx.dly}}
+    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l})), dly: {...fx.dly}, chain: fx.chain.map(cd=>({...cd}))}
   });
 
   // ================= recording =================
@@ -1578,9 +1657,7 @@ registerProcessor('cb-delay', CBDelay);`;
     for (const ch of chains) ok = apply(ch) && ok;
     if (!ok) restartIfPlaying();
   }
-  function updateDry(ch){
-    if (ch.dryG) ch.dryG.gain.setTargetAtTime(dryLevelFx(fx), ctx.currentTime, 0.03);
-  }
+
   // live === undefined -> structural (restart); live === null -> applies at next start; live fn -> smooth
   const bind = (id, key, out, fmtFn, live) => {
     $(id).addEventListener('input', e => {
@@ -1604,14 +1681,16 @@ registerProcessor('cb-delay', CBDelay);`;
   bind('fPitch','pitch','oPitch', v=>(v>0?'+':'')+v+' st');
   bind('fVerb','verb','oVerb', v=>Math.round(v*100)+'%', ch => {
     if (!ch.verbWet) return fx.verb <= 0.01;
-    ch.verbWet.gain.setTargetAtTime(Math.sin(Math.PI/2*fx.verb)*2.0, ctx.currentTime, 0.03);
-    updateDry(ch);
+    const wet = ch.verbMode === 'serial' ? Math.sin(Math.PI/2*fx.verb)*2.0 : fx.verb*2.0;
+    ch.verbWet.gain.setTargetAtTime(wet, ctx.currentTime, 0.03);
+    if (ch.verbDry) ch.verbDry.gain.setTargetAtTime(Math.cos(Math.PI/2*fx.verb), ctx.currentTime, 0.03);
     return true;
   });
   bind('fCrunch','crunch','oCrunch', v=>Math.round(v*100)+'%', ch => {
     if (!ch.crunchWet) return fx.crunch <= 0.01;
-    ch.crunchWet.gain.setTargetAtTime(Math.sin(fx.crunch*Math.PI/2), ctx.currentTime, 0.03);
-    ch.crunchDry.gain.setTargetAtTime(Math.cos(fx.crunch*Math.PI/2), ctx.currentTime, 0.03);
+    const cw = ch.crunchMode === 'serial' ? Math.sin(fx.crunch*Math.PI/2) : fx.crunch;
+    ch.crunchWet.gain.setTargetAtTime(cw, ctx.currentTime, 0.03);
+    if (ch.crunchDry) ch.crunchDry.gain.setTargetAtTime(Math.cos(fx.crunch*Math.PI/2), ctx.currentTime, 0.03);
     if (ch.crunchWS) ch.crunchWS.curve = distortionCurve(Math.pow(Math.max(fx.crunch,0.15),1.8));
     return true;
   });
@@ -1685,7 +1764,7 @@ registerProcessor('cb-delay', CBDelay);`;
   // ---- LFO section UI ----
   const LFO_DESTS = [
     ['off','Off'],['pan','Pan'],['filter','Filter'],['volume','Volume'],['speed','Speed'],
-    ['dlymix','Delay mix'],['dlytime','Delay time'],['dlyfb','Delay feedbk'],['dlytone','Delay tone'],['verb','Reverb'],['crunch','Crunch']
+    ['dlymix','Delay mix'],['dlytime','Delay time'],['dlyfb','Delay feedbk'],['dlytone','Delay tone'],['verb','Reverb'],['crunch','Crunch'],['filtermix','Filter mix']
   ];
   function buildLfoUI(){
     const box = $('lfoRows');
@@ -1757,12 +1836,17 @@ registerProcessor('cb-delay', CBDelay);`;
       fx.dly[key] = parseFloat(e.target.value);
       $(out).textContent = fmt(fx.dly[key]);
       if (dlyNeedsBuild()) { restartIfPlaying(); return; } // delay was off — spin the node up
-      if (param) liveDlyParam(param, map ? map(fx.dly[key]) : fx.dly[key]);
-      if (key === 'mix') activeChains().forEach(updateDry);
+      if (key === 'mix'){
+        for (const ch of activeChains()){
+          if (ch.dlyWet) ch.dlyWet.gain.setTargetAtTime(ch.dlyMode==='serial' ? Math.sin(Math.PI/2*fx.dly.mix) : fx.dly.mix, ctx.currentTime, 0.02);
+          if (ch.dlyDry) ch.dlyDry.gain.setTargetAtTime(Math.cos(fx.dly.mix*Math.PI/2), ctx.currentTime, 0.02);
+        }
+      } else if (param) liveDlyParam(param, map ? map(fx.dly[key]) : fx.dly[key]);
       syncDlyHead();
+      if (typeof syncChainSummaries === 'function') syncChainSummaries();
     });
   };
-  dbind('dMix','mix','oDMix', v=>v<0.01?'off':Math.round(v*100)+'%', 'mix', v=>Math.sin(Math.PI/2*v));
+  dbind('dMix','mix','oDMix', v=>v<0.01?'off':Math.round(v*100)+'%', 'mix');
   dbind('dTime','time','oDTime', v=>v.toFixed(2)+'s', 'time');
   dbind('dFb','feedback','oDFb', v=>Math.round(v*100)+'%', 'feedback');
   dbind('dTone','tone','oDTone', v=>Math.round(v*100)+'%', 'tone');
@@ -1815,6 +1899,7 @@ registerProcessor('cb-delay', CBDelay);`;
     $('dPP').classList.toggle('toggled', d.pingpong);
     $('dFreeze').classList.toggle('hot', d.freeze);
     syncDlyHead();
+    if (typeof syncChainSummaries === 'function') syncChainSummaries();
   }
   const DLY_PRESETS = {
     off:     mkDly(),
@@ -1829,7 +1914,7 @@ registerProcessor('cb-delay', CBDelay);`;
   });
 
   // ---- FX preset bank: 5 factory + 5 user (persisted) ----
-  const deepFx = f => ({...f, lfos: f.lfos.map(l=>({...l})), dly: {...f.dly}});
+  const deepFx = f => ({...f, lfos: f.lfos.map(l=>({...l})), dly: {...f.dly}, chain: (f.chain||mkChain()).map(cd=>({...cd}))});
   const mkFactory = over => { const f = fxDefaults(); Object.assign(f, over.base||{}); if (over.dly) f.dly = {...f.dly, ...over.dly}; if (over.lfo0) f.lfos[0] = {...f.lfos[0], ...over.lfo0}; return f; };
   let FACTORY_CACHE = null;
   const factoryPresets = () => FACTORY_CACHE || (FACTORY_CACHE = [
@@ -1842,7 +1927,7 @@ registerProcessor('cb-delay', CBDelay);`;
   let userBank = [null,null,null,null,null];
   function applyFxPreset(obj){
     Object.assign(fx, fxDefaults(), deepFx(obj));
-    syncControls(); syncSimple(); buildLfoUI(); syncDly(); restartIfPlaying();
+    syncControls(); syncSimple(); buildLfoUI(); syncDly(); buildChainUI(); restartIfPlaying();
   }
   function renderFxBank(){
     const row = $('fxBankRow');
@@ -1875,11 +1960,114 @@ registerProcessor('cb-delay', CBDelay);`;
   }
   const saveFxBank = () => tx('meta','readwrite', s => s.put(userBank, 'fxbank')).catch(()=>{});
 
+  // ---- chain UI: cards, connectors, drag-reorder, bypass, serial/parallel ----
+  const CARD_META = { crunch:{name:'CRUNCH'}, filter:{name:'FILTER'}, delay:{name:'DELAY'}, reverb:{name:'REVERB'} };
+  const cardOpen = { crunch:false, filter:false, delay:true, reverb:false };
+  (function(){
+    const d = document.createElement('div');
+    d.className = 'sl';
+    d.innerHTML = '<label>Mix <output id="oFiltMix">100%</output></label><input type="range" id="fFiltMix" min="0" max="1" step="0.01" value="1" title="Double-click to reset">';
+    $('cardParts').appendChild(d);
+  })();
+  bind('fFiltMix','filterMix','oFiltMix', v=>Math.round(v*100)+'%', ch => {
+    if (ch.filterWet){
+      ch.filterWet.gain.setTargetAtTime(ch.filterMode==='serial' ? Math.sin(Math.PI/2*fx.filterMix) : fx.filterMix, ctx.currentTime, 0.03);
+      if (ch.filterDry) ch.filterDry.gain.setTargetAtTime(Math.cos(fx.filterMix*Math.PI/2), ctx.currentTime, 0.03);
+      return true;
+    }
+    return fx.filterMix >= 0.995 || fx.freq >= 0.995;
+  });
+  function cardSummary(id){
+    if (id==='crunch') return fx.crunch<0.01 ? 'off' : Math.round(fx.crunch*100)+'%';
+    if (id==='filter') return (fx.freq>=0.995 ? 'open' : Math.round(80*Math.pow(14000/80,fx.freq))+' Hz '+fx.type.slice(0,4)) + (fx.filterMix<0.995 ? ' · mix '+Math.round(fx.filterMix*100)+'%' : '');
+    if (id==='delay'){ const d = fx.dly; return (d.mix<0.01&&!d.freeze) ? 'off' : Math.round(d.mix*100)+'% · '+(d.sync==='free'?d.time.toFixed(2)+'s':d.sync)+' · fb '+Math.round(d.feedback*100)+'%'+(d.freeze?' · FROZEN':''); }
+    if (id==='reverb') return fx.verb<0.01 ? 'off' : Math.round(fx.verb*100)+'%';
+    return '';
+  }
+  function parkParts(){
+    const w = $('cardParts');
+    for (const id of ['dlyBody','dFreeze']){ const el = $(id); if (el) w.appendChild(el); }
+    for (const id of ['fVerb','fCrunch','fFreq','fType','fFiltMix','dMix']){
+      const el = $(id);
+      if (el && el.closest('.sl')) w.appendChild(el.closest('.sl'));
+    }
+  }
+  function syncChainSummaries(){
+    document.querySelectorAll('#chainRows .fxcard').forEach(el => {
+      const m = el.querySelector('.fxcard-m');
+      if (m) m.textContent = cardSummary(el.dataset.card);
+    });
+  }
+  function buildChainUI(){
+    parkParts();
+    const box = $('chainRows');
+    box.innerHTML = '';
+    fx.chain.forEach((card, idx) => {
+      if (idx > 0){
+        const prev = fx.chain[idx-1];
+        const conn = document.createElement('div');
+        conn.className = 'chain-conn';
+        conn.textContent = !prev.on ? '· bypassed ·' : (prev.mode==='serial' ? '│ feeds ↓' : '⤂ branches → end of chain');
+        box.appendChild(conn);
+      }
+      const prev = idx > 0 ? fx.chain[idx-1] : null;
+      const fed = prev && prev.on && prev.mode === 'serial';
+      const el = document.createElement('div');
+      el.className = 'fxcard' + (cardOpen[card.id] ? '' : ' closed') + (card.on ? '' : ' bypassed');
+      el.dataset.card = card.id;
+      const h = document.createElement('div');
+      h.className = 'fxcard-h';
+      h.innerHTML = '<span class="drag-h" draggable="true" title="Drag to reorder">≡</span>'
+        + '<button class="mini pow'+(card.on?' toggled':'')+'" title="Bypass">⏻</button>'
+        + '<span class="fxcard-t">'+(cardOpen[card.id]?'▾':'▸')+' '+CARD_META[card.id].name+'</span>'
+        + (fed ? '<span class="fed" title="Fed by the card above">●</span>' : '')
+        + '<span class="fxcard-m"></span>'
+        + '<button class="mini mode" title="Serial (feeds next) or parallel (returns at end)">'+(card.mode==='serial'?'→':'⤂')+'</button>';
+      el.appendChild(h);
+      const body = document.createElement('div');
+      body.className = 'fxcard-b';
+      el.appendChild(body);
+      const adopt = (inputId, into) => { const p = $(inputId); if (p && p.closest('.sl')) into.appendChild(p.closest('.sl')); };
+      if (card.id === 'crunch'){
+        adopt('fCrunch', h);
+        body.innerHTML = '<div class="card-note">Mix drives amount + blend · deep body coming (algorithms, bias)</div>';
+      } else if (card.id === 'filter'){
+        adopt('fFiltMix', h);
+        const row = document.createElement('div'); row.className = 'sliders';
+        body.appendChild(row);
+        adopt('fFreq', row); adopt('fType', row);
+      } else if (card.id === 'delay'){
+        adopt('dMix', h);
+        if ($('dFreeze')) h.insertBefore($('dFreeze'), h.querySelector('.mode'));
+        if ($('dlyBody')) body.appendChild($('dlyBody'));
+      } else if (card.id === 'reverb'){
+        adopt('fVerb', h);
+        body.innerHTML = '<div class="card-note">Deep body coming · size, decay, pre-delay, shimmer, freeze</div>';
+      }
+      h.querySelector('.pow').onclick = e => { e.stopPropagation(); card.on = !card.on; buildChainUI(); restartIfPlaying(); };
+      h.querySelector('.mode').onclick = e => { e.stopPropagation(); card.mode = card.mode==='serial' ? 'parallel' : 'serial'; buildChainUI(); restartIfPlaying(); };
+      h.querySelector('.fxcard-t').onclick = () => { cardOpen[card.id] = !cardOpen[card.id]; buildChainUI(); };
+      const dh = h.querySelector('.drag-h');
+      dh.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(idx)); el.classList.add('dragging'); });
+      dh.addEventListener('dragend', () => el.classList.remove('dragging'));
+      el.addEventListener('dragover', e => e.preventDefault());
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (isNaN(from) || from === idx) return;
+        const [m] = fx.chain.splice(from, 1);
+        fx.chain.splice(idx, 0, m);
+        buildChainUI(); restartIfPlaying();
+      });
+      box.appendChild(el);
+    });
+    syncChainSummaries();
+  }
   // double-click any slider to snap it back to neutral
   const SLIDER_DEFAULTS = {
     fRate:0, fPitch:0, fPan:0, fVerb:0,
     fCrunch:0, fFreq:1, fFadeIn:0, fFadeOut:0, fGain:1,
-    dMix:0, dTime:0.34, dFb:0.35, dTone:0.5, dPitch:0, dDrive:0.3, dModD:0, dModR:0.8,
+    fFiltMix:1, dMix:0, dTime:0.34, dFb:0.35, dTone:0.5, dPitch:0, dDrive:0.3, dModD:0, dModR:0.8,
     xRate:0, xVerb:0, xGain:1,
     sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
     fCross:0, inGain:0, monGain:1, mThr:-24, mRatio:4, mMakeup:0
@@ -1912,8 +2100,9 @@ registerProcessor('cb-delay', CBDelay);`;
   });
   sbindX('xVerb','verb','oxVerb', v=>Math.round(v*100)+'%', ch => {
     if (!ch.verbWet) return fx.verb <= 0.01;
-    ch.verbWet.gain.setTargetAtTime(Math.sin(Math.PI/2*fx.verb)*2.0, ctx.currentTime, 0.03);
-    updateDry(ch);
+    const wet = ch.verbMode === 'serial' ? Math.sin(Math.PI/2*fx.verb)*2.0 : fx.verb*2.0;
+    ch.verbWet.gain.setTargetAtTime(wet, ctx.currentTime, 0.03);
+    if (ch.verbDry) ch.verbDry.gain.setTargetAtTime(Math.cos(Math.PI/2*fx.verb), ctx.currentTime, 0.03);
     return true;
   });
   sbindX('xGain','gain','oxGain', v=>Math.round(v*100)+'%', ch => {
@@ -1925,7 +2114,7 @@ registerProcessor('cb-delay', CBDelay);`;
     $('xVerb').value = fx.verb; $('oxVerb').textContent = Math.round(fx.verb*100)+'%';
     $('xGain').value = fx.gain; $('oxGain').textContent = Math.round(fx.gain*100)+'%';
   }
-  const fxDefaults = () => ({rate:1,pitch:0,verb:0,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,lfos:mkLfos(),dly:mkDly()});
+  const fxDefaults = () => ({rate:1,pitch:0,verb:0,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,filterMix:1,lfos:mkLfos(),dly:mkDly(),chain:mkChain()});
   function syncControls(){
     $('fRate').value=sliderFromRate(fx.rate); $('oRate').textContent=fx.rate.toFixed(2)+'×';
     $('fPitch').value=fx.pitch; $('oPitch').textContent=(fx.pitch>0?'+':'')+fx.pitch+' st';
@@ -1935,6 +2124,8 @@ registerProcessor('cb-delay', CBDelay);`;
     $('fType').value=fx.type;
     $('fFadeIn').value=fx.fadeIn; $('oFadeIn').textContent=fx.fadeIn.toFixed(1)+'s';
     $('fFadeOut').value=fx.fadeOut; $('oFadeOut').textContent=fx.fadeOut.toFixed(1)+'s';
+    if ($('fFiltMix')){ $('fFiltMix').value=fx.filterMix; $('oFiltMix').textContent=Math.round(fx.filterMix*100)+'%'; }
+    if (typeof syncChainSummaries === 'function') syncChainSummaries();
     $('fGain').value=fx.gain; $('oGain').textContent=Math.round(fx.gain*100)+'%';
     $('fPan').value=fx.pan; $('oPan').textContent=panFmt(fx.pan);
   }
@@ -2427,7 +2618,7 @@ registerProcessor('cb-delay', CBDelay);`;
     addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed, false);
     // the FX are printed into the bounce — reset the live chain so playback isn't double-processed
     Object.assign(fx, fxDefaults());
-    syncControls(); syncSimple(); buildLfoUI(); syncDly();
+    syncControls(); syncSimple(); buildLfoUI(); syncDly(); buildChainUI();
     setSlStatus('Bounced → shelf · FX printed, chain reset.');
   };
 
@@ -2617,6 +2808,7 @@ registerProcessor('cb-delay', CBDelay);`;
   rebuildMaster();
   buildLfoUI();
   syncDly();
+  buildChainUI();
   renderFxBank();
   renderSteps();
   drawWave();
