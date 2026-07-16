@@ -170,7 +170,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.12.1</small></h1>
+      <h1>CLIPDECK <small>v0.12.2</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -1174,6 +1174,7 @@ registerProcessor('cb-delay', CBDelay);`;
       return (sset.bpm/60) / beats;
     };
     const sources = [null,null,null,null];
+    const routeGains = [null,null,null,null];
     for (let i=0;i<4;i++){
       if (active[i]) sources[i] = makeLfoSource(c, active[i].shape, Math.max(0.02, bpmFreq(active[i])));
     }
@@ -1188,13 +1189,14 @@ registerProcessor('cb-delay', CBDelay);`;
       const route = (param, amount) => {
         const g = c.createGain(); g.gain.value = amount;
         src.node.connect(g); g.connect(param);
+        (routeGains[i] = routeGains[i] || []).push({p: g.gain, v: amount});
       };
       switch (l.dest){
         case 'pan':      route(panner.pan, Math.min(1, l.depth) * (1 - Math.abs(basePan))); break;
         case 'filter':   if (filterNode) route(filterNode.frequency, filterNode.frequency.value * 0.85 * l.depth); break;
         case 'filtermix': if (filterWet) route(filterWet.gain, l.depth * 0.5); break;
         case 'volume':   route(out.gain, p.gain * l.depth/2); break;
-        case 'speed':    { const g = c.createGain(); g.gain.value = l.depth * 0.5 * p.rate; src.node.connect(g); speedMod = g; } break;
+        case 'speed':    { const g = c.createGain(); g.gain.value = l.depth * 0.5 * p.rate; src.node.connect(g); speedMod = g; (routeGains[i] = routeGains[i] || []).push({p: g.gain, v: g.gain.value}); } break;
         case 'dlymix':  if (dlyWet) route(dlyWet.gain, l.depth * 0.5); break;
         case 'dlyfb':   if (dlyNode) route(dlyNode.parameters.get('feedback'), l.depth * 0.4); break;
         case 'dlytime': if (dlyNode) route(dlyNode.parameters.get('time'), l.depth * 0.15); break;
@@ -1210,10 +1212,11 @@ registerProcessor('cb-delay', CBDelay);`;
           }
       }
     }
+    const lfoRefs = sources.map((s,i) => (s && active[i]) ? {freqParam:s.freqParam, freqScale:s.freqScale, sync:active[i].sync, builtDepth:active[i].depth, gains:routeGains[i]||[]} : null);
     const lfoNodes = sources.filter(Boolean).map(s => s.node);
     const dlyActive = !!dlyWet;
     const tail = ((p.verb>0.01||targeted.has('verb'))?2.4:0) + (dlyActive ? Math.min(4, 1.2 + dlyTimeSec(dly)*(dly.feedback>0.85?4:2)) : 0);
-    return { input, out, tail, lfos: lfoNodes, speedMod, dlyNode, dlyWet, dlyDry, dlyMode, filterNode, filterWet, filterDry, filterMode, verbWet, verbDry, verbMode, crunchWet, crunchDry, crunchWS, crunchMode, panner, volHead };
+    return { input, out, tail, lfos: lfoNodes, lfoRefs, speedMod, dlyNode, dlyWet, dlyDry, dlyMode, filterNode, filterWet, filterDry, filterMode, verbWet, verbDry, verbMode, crunchWet, crunchDry, crunchWS, crunchMode, panner, volHead };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -1622,10 +1625,7 @@ registerProcessor('cb-delay', CBDelay);`;
     moveTrim(s);
   });
   canvas.addEventListener('pointermove', e => { if (dragging) moveTrim(posToSec(e)); });
-  canvas.addEventListener('pointerup', () => {
-    if (dragging && seq.on) startSeq();
-    dragging = null;
-  });
+  canvas.addEventListener('pointerup', () => { dragging = null; });
   function moveTrim(s){
     if (cur && uiMode === 'deck'){
       const b = sliceBoundaries();
@@ -1642,7 +1642,7 @@ registerProcessor('cb-delay', CBDelay);`;
   function updateTrimRead(){
     $('trimRead').textContent = cur ? `${fmt(trimA)} → ${fmt(trimB)}  (${fmt(trimB-trimA)})` : '';
   }
-  $('trimResetBtn').onclick = () => { if(!cur)return; trimA=0; trimB=cur.duration; drawWave(); updateTrimRead(); if (seq.on) startSeq(); };
+  $('trimResetBtn').onclick = () => { if(!cur)return; trimA=0; trimB=cur.duration; drawWave(); updateTrimRead(); };
   $('commitBtn').onclick = () => {
     if (!cur) return;
     if (trimB - trimA >= cur.duration - 0.01){ setStatus('Nothing to commit — trim is the whole clip.'); return; }
@@ -1683,7 +1683,7 @@ registerProcessor('cb-delay', CBDelay);`;
     snapOn = !snapOn;
     $('snapBtn').classList.toggle('toggled', snapOn);
     saveMeta(); drawWave();
-    if (seq.on) startSeq();
+    refreshSeqBounds();
   };
 
   // ================= fx controls =================
@@ -1852,9 +1852,29 @@ registerProcessor('cb-delay', CBDelay);`;
       destSel.value = l.dest;
       row.querySelector('[data-k=shape]').onchange = e => { l.shape = e.target.value; restartIfPlaying(); };
       row.querySelector('[data-k=sync]').onchange = e => { l.sync = e.target.value; updOuts(); restartIfPlaying(); };
-      rateIn.addEventListener('input', e => { l.rate = parseFloat(e.target.value); updOuts(); restartIfPlaying(); });
+      rateIn.addEventListener('input', e => {
+        l.rate = parseFloat(e.target.value); updOuts();
+        let live = false;
+        for (const ch of activeChains()){
+          const r = ch.lfoRefs && ch.lfoRefs[i];
+          if (r && l.sync === 'free'){ r.freqParam.setTargetAtTime(Math.max(0.02, l.rate)*r.freqScale, ctx.currentTime, 0.03); live = true; }
+        }
+        if (!live && l.depth > 0.005 && l.dest !== 'off') restartIfPlaying();
+      });
       rateIn.addEventListener('dblclick', () => { l.rate = 1; rateIn.value = 1; updOuts(); restartIfPlaying(); });
-      depthIn.addEventListener('input', e => { l.depth = parseFloat(e.target.value); updOuts(); restartIfPlaying(); });
+      depthIn.addEventListener('input', e => {
+        l.depth = parseFloat(e.target.value); updOuts();
+        let live = false;
+        for (const ch of activeChains()){
+          const r = ch.lfoRefs && ch.lfoRefs[i];
+          if (r && r.builtDepth > 0.004){
+            const f = l.depth / r.builtDepth;
+            r.gains.forEach(({p, v}) => p.setTargetAtTime(v*f, ctx.currentTime, 0.03));
+            live = true;
+          }
+        }
+        if (!live && l.depth > 0.005 && l.dest !== 'off') restartIfPlaying();
+      });
       depthIn.addEventListener('dblclick', () => { l.depth = 0; depthIn.value = 0; updOuts(); restartIfPlaying(); });
       destSel.onchange = e => { l.dest = e.target.value; refreshDestExclusivity(); restartIfPlaying(); };
       updOuts();
@@ -2265,9 +2285,53 @@ registerProcessor('cb-delay', CBDelay);`;
     cancelAnimationFrame(playing.rafId);
     playing = null; drawWave();
   }
+  // hot-swap: rebuild per-track chains WITHOUT stopping the transport; old chains ring out and retire
+  async function rebuildSeqChains(){
+    if (!seq.on || !seq.tracks) return;
+    for (const pt of seq.tracks){
+      const oldChain = pt.chain, oldGain = pt.trackGain;
+      const chain = await buildChain(ctx, pt.t.fx);
+      const tg = ctx.createGain();
+      tg.gain.value = pt.t.mute ? 0 : pt.t.gain;
+      chain.out.connect(tg); tg.connect(master.in);
+      pt.chain = chain; pt.trackGain = tg;
+      setTimeout(() => {
+        try{ (oldChain.lfos||[]).forEach(n => n.stop()); }catch(e){}
+        try{ if (oldChain.dlyNode) oldChain.dlyNode.port.postMessage('k'); }catch(e){}
+        try{ oldGain.disconnect(); }catch(e){}
+      }, 2500); // tails ring out before teardown
+    }
+  }
+  // retime: re-anchor the clock so the next step lands on time under new BPM/division/swing
+  function retimeSeq(){
+    if (!seq.on) return;
+    const newStepDur = STEP();
+    const sw = Math.min(0.75, Math.max(0.5, sset.swing/100));
+    const tPrevNext = stepTimeOf(seq.abs, seq.t0, seq.stepDur);
+    const target = Math.max(ctx.currentTime + 0.03, tPrevNext);
+    const off = Math.floor(seq.abs/2)*2*newStepDur + (seq.abs%2 ? 2*newStepDur*sw : 0);
+    seq.t0 = target - off;
+    seq.stepDur = newStepDur;
+    // tempo-synced params follow live
+    for (const pt of seq.tracks){
+      const d = pt.t.fx.dly;
+      if (pt.chain.dlyNode && d.sync !== 'free') pt.chain.dlyNode.parameters.get('time').setTargetAtTime(dlyTimeSec(d), ctx.currentTime, 0.05);
+      (pt.chain.lfoRefs || []).forEach((r, ri) => {
+        if (r && r.sync !== 'free'){
+          const l = pt.t.fx.lfos[ri];
+          const beats = {'1/16':0.25,'1/8':0.5,'1/4':1,'1/2':2,'1bar':4,'2bars':8}[l.sync] || 1;
+          r.freqParam.setTargetAtTime(Math.max(0.02, (sset.bpm/60)/beats)*r.freqScale, ctx.currentTime, 0.05);
+        }
+      });
+    }
+  }
+  function refreshSeqBounds(){
+    if (!seq.on || !seq.tracks) return;
+    for (const pt of seq.tracks) pt.bounds = sliceBoundariesFor(pt.clip);
+  }
   function restartIfPlaying(){
-    if (playing) startPlayback();
-    else if (seq.on) startSeq();
+    if (playing) startPlayback();          // editor preview: restart (pitch rerender path)
+    else if (seq.on) rebuildSeqChains();   // pattern never stops
   }
 
   // ================= sequencer =================
@@ -2449,9 +2513,9 @@ registerProcessor('cb-delay', CBDelay);`;
     seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], tracks:playable, stepDur };
     const tick = () => {
       while (seq.on){
-        const t = stepTimeOf(seq.abs, seq.t0, stepDur);
+        const t = stepTimeOf(seq.abs, seq.t0, seq.stepDur);
         if (t >= ctx.currentTime + 0.15) break;
-        const tNext = stepTimeOf(seq.abs+1, seq.t0, stepDur);
+        const tNext = stepTimeOf(seq.abs+1, seq.t0, seq.stepDur);
         const span = tNext - t;
         for (const pt of seq.tracks){
           const len = Math.max(1, pt.t.len);
@@ -2649,8 +2713,7 @@ registerProcessor('cb-delay', CBDelay);`;
       }
       renderSteps(); renderInsp(); saveMeta();
       setSlStatus('Straight — sequential slices, everything on.');
-      if (seq.on) startSeq();
-      return;
+      return; // pattern data is read live by the scheduler
     }
     const p = PATTERN_PRESETS[name];
     if (!p) return;
@@ -2683,7 +2746,8 @@ registerProcessor('cb-delay', CBDelay);`;
     if (selStep >= sset.len) selStep = -1;
     syncSeqControls(); renderSteps(); renderInsp(); saveMeta(); drawWave();
     setSlStatus(name.charAt(0).toUpperCase()+name.slice(1) + ' starter · ' + p.bpm + ' BPM · loudest slice on the kicks.');
-    if (seq.on) startSeq();
+    tracks[activeTrack].len = sset.len;
+    retimeSeq();
   }
   document.querySelectorAll('.chip[data-pp]').forEach(ch => ch.onclick = () => applyPatternPreset(ch.dataset.pp));
 
@@ -2707,13 +2771,13 @@ registerProcessor('cb-delay', CBDelay);`;
     $('oSwing').textContent = sset.swing + '%';
     saveMeta();
   });
-  $('sSwing').addEventListener('change', () => { if (seq.on) startSeq(); });
+  $('sSwing').addEventListener('change', () => retimeSeq());
   $('sGrid').addEventListener('change', e => {
     pushPatternUndo();
     sset.grid = parseInt(e.target.value, 10);
     pattern.forEach(st => { st.slice = Math.min(st.slice, sset.grid-1); });
     saveMeta(); drawWave(); renderSteps(); renderInsp();
-    if (seq.on) startSeq();
+    refreshSeqBounds();
   });
   $('sSeed').addEventListener('change', e => {
     sset.seed = Math.max(1, parseInt(e.target.value, 10) || 1);
@@ -2724,14 +2788,14 @@ registerProcessor('cb-delay', CBDelay);`;
     sset.bpm = Math.max(30, Math.min(300, parseInt(e.target.value, 10) || 120));
     e.target.value = sset.bpm;
     saveMeta();
-    if (seq.on) startSeq();
+    retimeSeq();
   });
   $('bpmEstBtn').onclick = () => {
     if (cur && cur.bpmEst){
       sset.bpm = cur.bpmEst;
       $('sBpm').value = sset.bpm;
       saveMeta();
-      if (seq.on) startSeq();
+      retimeSeq();
     }
   };
   $('tapBtn').onclick = () => {
@@ -2745,16 +2809,17 @@ registerProcessor('cb-delay', CBDelay);`;
       sset.bpm = Math.max(30, Math.min(300, Math.round(60000/avg)));
       $('sBpm').value = sset.bpm;
       saveMeta();
-      if (seq.on) startSeq();
+      retimeSeq();
     }
   };
   $('sDiv').addEventListener('change', e => {
     sset.div = parseFloat(e.target.value);
     saveMeta();
-    if (seq.on) startSeq();
+    retimeSeq();
   });
   $('sLen').addEventListener('change', e => {
     sset.len = Math.max(1, Math.min(32, parseInt(e.target.value, 10) || 8));
+    tracks[activeTrack].len = sset.len;
     e.target.value = sset.len;
     if (selStep >= sset.len) selStep = -1;
     saveMeta(); renderSteps(); renderInsp();
