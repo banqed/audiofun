@@ -170,7 +170,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.12</small></h1>
+      <h1>CLIPDECK <small>v0.12.1</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -515,6 +515,7 @@ class CBDelay extends AudioWorkletProcessor{
     const cut=300*Math.pow(16000/300,tone);
     const a=1-Math.exp(-6.283185307*cut/sampleRate);
     const dk=1+drive*4;
+    const mkOut=1+drive*1.5; // loudness lives outside the loop
     const phInc=(ratio-1)/this.W;
     for(let i=0;i<n;i++){
       this.mp+=modR/sampleRate; if(this.mp>=1)this.mp-=1;
@@ -525,19 +526,20 @@ class CBDelay extends AudioWorkletProcessor{
       if(shift){
         this.ph+=phInc; this.ph-=Math.floor(this.ph);
         const p2=(this.ph+0.5)%1;
-        const gA=Math.sin(3.14159265*this.ph), gB=Math.sin(3.14159265*p2);
+        const sA=Math.sin(3.14159265*this.ph), sB=Math.sin(3.14159265*p2);
+        const gA=sA*sA, gB=sB*sB;
         const oA=this.ph*this.W, oB=p2*this.W;
         rl=this.tap(0,d+oA)*gA+this.tap(0,d+oB)*gB;
         rr=this.tap(1,d+oA)*gA+this.tap(1,d+oB)*gB;
       } else { rl=this.tap(0,d); rr=this.tap(1,d); }
       this.lp[0]+=a*(rl-this.lp[0]); this.lp[1]+=a*(rr-this.lp[1]);
-      let pl=Math.tanh(this.lp[0]*dk)*(1-drive*0.25);
-      let pr=Math.tanh(this.lp[1]*dk)*(1-drive*0.25);
+      let pl=Math.tanh(this.lp[0]*dk)/dk;
+      let pr=Math.tanh(this.lp[1]*dk)/dk;
       const im=frz?0:1, f=frz?1:fb;
       const xl=iL?iL[i]:0, xr=iR?iR[i]:0;
       if(pp){ this.b[0][this.w]=xl*im + pr*f; this.b[1][this.w]=pl*f; }
       else { this.b[0][this.w]=xl*im + pl*f; this.b[1][this.w]=xr*im + pr*f; }
-      L[i]=pl; R[i]=pr;
+      L[i]=pl*mkOut; R[i]=pr*mkOut;
       this.w=(this.w+1)%this.N;
     }
     return true;
@@ -1912,6 +1914,7 @@ registerProcessor('cb-delay', CBDelay);`;
   $('dPP').onclick = () => {
     fx.dly.pingpong = !fx.dly.pingpong;
     $('dPP').classList.toggle('toggled', fx.dly.pingpong);
+    $('dPP').textContent = fx.dly.pingpong ? 'On' : 'Off';
     liveDlyParam('pingpong', fx.dly.pingpong ? 1 : 0);
     if (dlyNeedsBuild()) restartIfPlaying();
   };
@@ -1944,6 +1947,7 @@ registerProcessor('cb-delay', CBDelay);`;
     $('dModD').value=d.mod; $('oDModD').textContent=d.mod<0.01?'off':Math.round(d.mod*100)+'%';
     $('dModR').value=d.modRate; $('oDModR').textContent=d.modRate.toFixed(2)+' Hz';
     $('dPP').classList.toggle('toggled', d.pingpong);
+    $('dPP').textContent = d.pingpong ? 'On' : 'Off';
     $('dFreeze').classList.toggle('hot', d.freeze);
     syncDlyHead();
     if (typeof syncChainSummaries === 'function') syncChainSummaries();
