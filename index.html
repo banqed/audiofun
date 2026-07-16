@@ -114,6 +114,15 @@
   .fxcard-h .sl{min-width:150px;margin-left:8px}
   .fxcard-b .sliders{margin-top:4px}
   .card-note{font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:2px 0 6px}
+  .ttab{display:flex;align-items:center;gap:6px;background:var(--panel-hi);border-radius:8px;padding:6px 10px;box-shadow:0 2px 4px rgba(0,0,0,.15);border:2px solid transparent}
+  .ttab.on{border-color:var(--amber)}
+  .ttab .tname{font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer}
+  .ttab .tclip{font-family:var(--mono);font-size:9px;color:var(--ink-soft);max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ttab input[type=range]{width:80px;height:18px}
+  .ttab .mini.muted{background:var(--rec);color:#fff}
+  body.stepsel .sl:has(#fFreq) label, body.stepsel .sl:has(#fGain) label, body.stepsel .sl:has(#dMix) label{color:var(--amber);font-weight:700}
+  body.stepsel .sl:has(#fFreq) input::-webkit-slider-thumb, body.stepsel .sl:has(#fGain) input::-webkit-slider-thumb, body.stepsel .sl:has(#dMix) input::-webkit-slider-thumb{background:linear-gradient(#FFC076,var(--amber));border-color:#B65F0D}
+  .pgbtn.playing{box-shadow:0 0 0 2px var(--amber)}
   .status{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
   .sl-row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
   .sl-row .sl{min-width:0}
@@ -161,7 +170,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.11</small></h1>
+      <h1>CLIPDECK <small>v0.12</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -223,6 +232,7 @@
           <button class="hbtn deck-only" id="revBtn" disabled>⇄ Reverse</button>
           <button class="hbtn" id="trimResetBtn" disabled>Reset trim</button>
           <button class="hbtn" id="commitBtn" disabled>Commit trim</button>
+          <button class="hbtn" id="assignBtn" disabled>Assign ▸ T1</button>
           <span class="trim-read" id="trimRead">drag the orange handles to trim</span>
         </div>
       </div>
@@ -246,7 +256,8 @@
 
       <!-- SEQUENCER (deck) -->
       <div class="well deck-only">
-        <div class="label">Sequencer <span id="slHint">slices → steps → fx</span></div>
+        <div class="label">Sequencer <span id="slHint">tracks → slices → steps · select a step, then Filter/Volume/Delay-mix sliders write P-locks</span></div>
+        <div class="sl-row" id="trackRow" style="margin-bottom:10px"></div>
         <div class="sl-row">
           <div class="sl"><label>Grid</label>
             <select id="sGrid">
@@ -277,6 +288,7 @@
             </select></div>
         </div>
 
+        <div class="sl-row" id="pageRow" style="margin-bottom:6px;display:none"></div>
         <div class="steps" id="stepRow"></div>
 
         <div class="insp hidden" id="insp">
@@ -621,7 +633,8 @@ registerProcessor('cb-delay', CBDelay);`;
 
   const $ = id => document.getElementById(id);
   const mkLfos = () => Array.from({length:4}, () => ({rate:1, depth:0, shape:'sine', sync:'free', dest:'off'}));
-  const fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, filterMix:1, lfos: mkLfos(), dly: mkDly(), chain: mkChain() };
+  let fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, filterMix:1, lfos: mkLfos(), dly: mkDly(), chain: mkChain() };
+  let tracks = null, activeTrack = 0; // initialized after fxDefaults (v0.9 TDZ lesson)
   const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
@@ -644,7 +657,7 @@ registerProcessor('cb-delay', CBDelay);`;
   }
 
   // ================= undo =================
-  function snapshotPattern(){ return pattern.map(p=>({...p})); }
+  function snapshotPattern(){ return pattern.map(p=>({...p, locks: p.locks ? {...p.locks} : undefined})); }
   function pushUndo(a){
     undoStack.push(a);
     if (undoStack.length > 20) undoStack.shift();
@@ -654,7 +667,9 @@ registerProcessor('cb-delay', CBDelay);`;
     const a = undoStack.pop();
     if (!a){ $('undoBtn').disabled = true; return; }
     if (a.type === 'pattern'){
-      pattern = a.data.map(p=>({...p}));
+      const ti = a.ti != null ? a.ti : activeTrack;
+      tracks[ti].pattern = a.data.map(p=>({...p, locks: p.locks ? {...p.locks} : undefined}));
+      if (ti === activeTrack) pattern = tracks[ti].pattern;
       renderSteps(); renderInsp(); saveMeta();
       setStatus('Undid pattern change.');
     } else if (a.type === 'commit'){
@@ -672,6 +687,8 @@ registerProcessor('cb-delay', CBDelay);`;
     } else if (a.type === 'deleteClip'){
       clips.splice(Math.min(a.index, clips.length), 0, a.clip);
       a.tl.forEach(({item, index}) => timeline.splice(Math.min(index, timeline.length), 0, item));
+      (a.trackRefs||[]).forEach(i => { if (tracks[i]) tracks[i].clipId = a.clip.id; });
+      if (typeof renderTracks === 'function') renderTracks();
       saveClipDB(a.clip); saveMeta();
       renderClips(); renderTimeline();
       setStatus('Restored ' + a.clip.name + '.');
@@ -687,7 +704,7 @@ registerProcessor('cb-delay', CBDelay);`;
       doUndo();
     }
   });
-  const pushPatternUndo = () => pushUndo({type:'pattern', data:snapshotPattern()});
+  const pushPatternUndo = () => pushUndo({type:'pattern', ti:activeTrack, data:snapshotPattern()});
 
   // ================= mode =================
   function applyMode(){
@@ -724,7 +741,11 @@ registerProcessor('cb-delay', CBDelay);`;
   const deleteClipDB = id => tx('clips','readwrite', s => s.delete(id)).then(updateStoreInfo).catch(()=>{});
   const saveMeta = () => tx('meta','readwrite', s => {
     s.put(timeline, 'timeline');
-    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, monLevel, mset:{...mset}, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
+    tracks[activeTrack].len = sset.len;
+    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, monLevel, mset:{...mset}, sset:{...sset},
+      pattern:pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined})),
+      tracks: tracks.map(t=>({clipId:t.clipId, len:t.len, gain:t.gain, mute:t.mute, pattern:t.pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined}))}))
+    }, 'state');
   }).catch(()=>{});
   const getAll = store => new Promise((res) => {
     if (!db) return res([]);
@@ -780,6 +801,19 @@ registerProcessor('cb-delay', CBDelay);`;
         if (state.mset) Object.assign(mset, state.mset);
         if (state.sset) Object.assign(sset, state.sset);
         if (Array.isArray(state.pattern)) pattern = pattern.map((p,i)=> state.pattern[i] ? {...defaultStep(i), ...state.pattern[i]} : p);
+        if (Array.isArray(state.tracks)){
+          state.tracks.forEach((st2, i) => {
+            if (!tracks[i]) return;
+            tracks[i].clipId = st2.clipId != null ? st2.clipId : null;
+            tracks[i].len = st2.len || 8;
+            tracks[i].gain = st2.gain != null ? st2.gain : 0.85;
+            tracks[i].mute = !!st2.mute;
+            if (Array.isArray(st2.pattern)) tracks[i].pattern = tracks[i].pattern.map((p,j)=> st2.pattern[j] ? {...defaultStep(j), ...st2.pattern[j]} : p);
+          });
+          pattern = tracks[0].pattern;
+          fx = tracks[0].fx;
+          sset.len = tracks[0].len;
+        } else { tracks[0].len = sset.len; } // pre-v0.12 state -> track 1
         $('fCross').value = crossfade; $('oCross').textContent = crossfade.toFixed(1)+'s';
         $('limitBtn').classList.toggle('toggled', limiter);
         $('autoTrimBtn').classList.toggle('toggled', autoTrimOn);
@@ -790,6 +824,7 @@ registerProcessor('cb-delay', CBDelay);`;
       }
       const bank = await getMeta('fxbank');
       if (Array.isArray(bank) && bank.length === 5) userBank = bank;
+      tracks.forEach(t => { if (t.clipId != null && !clips.some(c=>c.id===t.clipId)) t.clipId = null; });
       const tl = await getMeta('timeline');
       if (Array.isArray(tl)) timeline = tl.filter(it => clips.some(c=>c.id===it.clipId));
       if (clips.length) setStatus('Restored ' + clips.length + ' clip' + (clips.length>1?'s':'') + '.');
@@ -798,6 +833,7 @@ registerProcessor('cb-delay', CBDelay);`;
     applyMode();
     syncMaster(); rebuildMaster();
     renderFxBank();
+    renderTracks();
     renderClips(); renderTimeline(); renderSteps();
     updateStoreInfo();
   }
@@ -858,16 +894,17 @@ registerProcessor('cb-delay', CBDelay);`;
     }
   }
 
-  function sliceBoundaries(){
+  function sliceBoundaries(){ return sliceBoundariesFor(cur); }
+  function sliceBoundariesFor(clip){
     const N = sset.grid;
-    const dur = cur ? cur.duration : 1;
+    const dur = clip ? clip.duration : 1;
     const b = new Array(N+1);
     for (let i=0;i<=N;i++) b[i] = dur*i/N;
-    if (snapOn && cur && cur.onsets && cur.onsets.length){
+    if (snapOn && clip && clip.onsets && clip.onsets.length){
       const tol = (dur/N) * 0.15;
       for (let i=1;i<N;i++){
         let best = null, bd = tol;
-        for (const o of cur.onsets){
+        for (const o of clip.onsets){
           const d2 = Math.abs(o - b[i]);
           if (d2 < bd){ bd = d2; best = o; }
         }
@@ -1477,9 +1514,12 @@ registerProcessor('cb-delay', CBDelay);`;
       el.querySelector('.del').onclick = () => {
         const index = clips.indexOf(c);
         const tl = timeline.map((item,i)=>({item,index:i})).filter(x=>x.item.clipId===c.id);
-        pushUndo({type:'deleteClip', clip:c, index, tl});
+        const trackRefs = tracks.map((t,i)=>t.clipId===c.id?i:-1).filter(i=>i>=0);
+        trackRefs.forEach(i => tracks[i].clipId = null);
+        pushUndo({type:'deleteClip', clip:c, index, tl, trackRefs});
         clips = clips.filter(x=>x!==c);
         timeline = timeline.filter(it => it.clipId!==c.id);
+        renderTracks();
         deleteClipDB(c.id); saveMeta();
         if (cur===c){ stopPlayback(); stopSeq(); cur=null; $('clipTitle').textContent='—'; drawWave(); updateButtons(); }
         renderClips(); renderTimeline();
@@ -1502,7 +1542,9 @@ registerProcessor('cb-delay', CBDelay);`;
   }
   function updateButtons(){
     const on = !!cur;
-    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','commitBtn','revBtn','exportBtn','exportBtnS','addTlBtn','patBtn','patStopBtn','bounceBtn']) $(id).disabled = !on;
+    for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','commitBtn','revBtn','exportBtn','exportBtnS','addTlBtn','patBtn','patStopBtn','bounceBtn','assignBtn']) $(id).disabled = !on;
+    const anyAssigned = tracks && tracks.some(t => trackClip(t));
+    if (anyAssigned){ $('patBtn').disabled = false; $('patStopBtn').disabled = false; $('bounceBtn').disabled = false; }
   }
 
   // ================= waveform + trim =================
@@ -1646,7 +1688,10 @@ registerProcessor('cb-delay', CBDelay);`;
   function activeChains(){
     const a = [];
     if (playing && playing.chain) a.push(playing.chain);
-    if (seq.on && seq.chain) a.push(seq.chain);
+    if (seq.on && seq.tracks){
+      const pt = seq.tracks.find(x => x.ti === activeTrack);
+      if (pt) a.push(pt.chain);
+    }
     return a;
   }
   // apply(ch) returns false if the needed node doesn't exist yet -> one rebuild spins it up
@@ -1661,6 +1706,7 @@ registerProcessor('cb-delay', CBDelay);`;
   // live === undefined -> structural (restart); live === null -> applies at next start; live fn -> smooth
   const bind = (id, key, out, fmtFn, live) => {
     $(id).addEventListener('input', e => {
+      if (typeof lockIntercept === 'function' && lockIntercept(id, parseFloat(e.target.value), out, fmtFn)) return;
       fx[key] = parseFloat(e.target.value);
       $(out).textContent = fmtFn(fx[key]);
       syncSimple();
@@ -1833,6 +1879,7 @@ registerProcessor('cb-delay', CBDelay);`;
   const dlyNeedsBuild = () => (playing || seq.on) && !( (playing && playing.chain.dlyWet) || (seq.on && seq.chain.dlyWet) );
   const dbind = (id, key, out, fmt, param, map) => {
     $(id).addEventListener('input', e => {
+      if (typeof lockIntercept === 'function' && id === 'dMix' && lockIntercept(id, parseFloat(e.target.value), out, fmt)) return;
       fx.dly[key] = parseFloat(e.target.value);
       $(out).textContent = fmt(fx.dly[key]);
       if (dlyNeedsBuild()) { restartIfPlaying(); return; } // delay was off — spin the node up
@@ -2074,6 +2121,15 @@ registerProcessor('cb-delay', CBDelay);`;
   };
   document.querySelectorAll('input[type=range]').forEach(el => {
     el.addEventListener('dblclick', () => {
+      if (LOCKABLE[el.id] && selStep >= 0){
+        const st = pattern[selStep];
+        if (st.locks && LOCKABLE[el.id] in st.locks){
+          delete st.locks[LOCKABLE[el.id]];
+          if (!Object.keys(st.locks).length) delete st.locks;
+          renderSteps(); saveMeta(); syncLockView();
+          return;
+        }
+      }
       if (!(el.id in SLIDER_DEFAULTS)) return;
       el.value = SLIDER_DEFAULTS[el.id];
       el.dispatchEvent(new Event('input'));
@@ -2115,6 +2171,20 @@ registerProcessor('cb-delay', CBDelay);`;
     $('xGain').value = fx.gain; $('oxGain').textContent = Math.round(fx.gain*100)+'%';
   }
   const fxDefaults = () => ({rate:1,pitch:0,verb:0,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,filterMix:1,lfos:mkLfos(),dly:mkDly(),chain:mkChain()});
+  const mkTrack = () => ({clipId:null, pattern:Array.from({length:32},(_,i)=>defaultStep(i)), len:8, gain:0.85, mute:false, fx:fxDefaults()});
+  tracks = [ {clipId:null, pattern, len:sset.len, gain:0.85, mute:false, fx}, mkTrack() ];
+  function trackClip(t){ return t.clipId != null ? clips.find(c=>c.id===t.clipId) : null; }
+  function switchTrack(i){
+    if (i === activeTrack) return;
+    tracks[activeTrack].len = sset.len;
+    activeTrack = i;
+    fx = tracks[i].fx;
+    pattern = tracks[i].pattern;
+    sset.len = tracks[i].len;
+    selStep = -1;
+    syncControls(); syncSimple(); syncDly(); buildChainUI(); buildLfoUI(); syncSeqControls();
+    renderSteps(); renderInsp(); renderTracks();
+  }
   function syncControls(){
     $('fRate').value=sliderFromRate(fx.rate); $('oRate').textContent=fx.rate.toFixed(2)+'×';
     $('fPitch').value=fx.pitch; $('oPitch').textContent=(fx.pitch>0?'+':'')+fx.pitch+' st';
@@ -2215,11 +2285,12 @@ registerProcessor('cb-delay', CBDelay);`;
     return hash01(loop*131 + stepIdx, 9) < p;
   }
   // span = actual time until the next step (varies under swing)
-  function scheduleStep(c, chain, bufN, bufR, st, tAbs, span, bounds){
+  function scheduleStep(c, chain, bufN, bufR, st, tAbs, span, bounds, tFx){
     const N = sset.grid;
+    const F = tFx || fx;
     const idx = Math.min(st.slice, N-1);
     const sliceStart = bounds[idx], sliceLen = bounds[idx+1]-bounds[idx];
-    const hitRate = Math.max(0.05, fx.rate * Math.pow(2, st.pitch/12));
+    const hitRate = Math.max(0.05, F.rate * Math.pow(2, st.pitch/12));
     const n = st.retrig;
     for (let k=0;k<n;k++){
       const t = tAbs + k*span/n;
@@ -2248,53 +2319,165 @@ registerProcessor('cb-delay', CBDelay);`;
       src.start(t, off, contentSecs + 0.01);
     }
   }
+  // ---- track tabs / mini mixer ----
+  function renderTracks(){
+    const row = $('trackRow');
+    if (!row) return;
+    row.innerHTML = '';
+    tracks.forEach((t, i) => {
+      const c = trackClip(t);
+      const el = document.createElement('div');
+      el.className = 'ttab' + (i === activeTrack ? ' on' : '');
+      el.innerHTML = '<span class="tname">T' + (i+1) + '</span>'
+        + '<span class="tclip">' + (c ? c.name : '— no clip') + '</span>'
+        + '<button class="mini' + (t.mute ? ' muted' : '') + '" title="Mute">M</button>'
+        + '<input type="range" min="0" max="1.2" step="0.01" value="' + t.gain + '" title="Track level — double-click resets">';
+      el.querySelector('.tname').onclick = () => switchTrack(i);
+      el.onclick = e => { if (e.target === el) switchTrack(i); };
+      el.querySelector('.mini').onclick = e => {
+        e.stopPropagation();
+        t.mute = !t.mute;
+        e.target.classList.toggle('muted', t.mute);
+        if (seq.on && seq.tracks){ const pt = seq.tracks.find(x=>x.ti===i); if (pt) pt.trackGain.gain.setTargetAtTime(t.mute ? 0 : t.gain, ctx.currentTime, 0.02); }
+        saveMeta();
+      };
+      const g = el.querySelector('input');
+      g.addEventListener('input', e => {
+        t.gain = parseFloat(e.target.value);
+        if (seq.on && seq.tracks && !t.mute){ const pt = seq.tracks.find(x=>x.ti===i); if (pt) pt.trackGain.gain.setTargetAtTime(t.gain, ctx.currentTime, 0.02); }
+        saveMeta();
+      });
+      g.addEventListener('dblclick', () => { g.value = 0.85; g.dispatchEvent(new Event('input')); });
+      row.appendChild(el);
+    });
+    if ($('assignBtn')) $('assignBtn').textContent = 'Assign ▸ T' + (activeTrack+1);
+  }
+  $('assignBtn').onclick = () => {
+    if (!cur) return;
+    tracks[activeTrack].clipId = cur.id;
+    renderTracks(); saveMeta();
+    setStatus(cur.name + ' → T' + (activeTrack+1) + '.');
+  };
+  // ---- step pages ----
+  let stepPage = 0;
+  function renderPages(){
+    const row = $('pageRow');
+    const pages = Math.ceil(sset.len / 16);
+    if (pages <= 1){ row.style.display = 'none'; stepPage = 0; return; }
+    row.style.display = '';
+    if (stepPage >= pages) stepPage = pages - 1;
+    row.innerHTML = '';
+    for (let p=0; p<pages; p++){
+      const b = document.createElement('button');
+      b.className = 'mini pgbtn' + (p === stepPage ? ' toggled' : '');
+      b.textContent = 'P' + (p+1);
+      b.onclick = () => { stepPage = p; renderSteps(); };
+      row.appendChild(b);
+    }
+  }
+  // ---- p-lock capture: with a step selected, these sliders write the step, not the track ----
+  const LOCKABLE = { fFreq:'freq', fGain:'gain', dMix:'dmix' };
+  function lockIntercept(id, value, outId, fmtFn){
+    if (selStep < 0 || !LOCKABLE[id]) return false;
+    const st = pattern[selStep];
+    st.locks = st.locks || {};
+    const fresh = !(LOCKABLE[id] in st.locks);
+    st.locks[LOCKABLE[id]] = value;
+    $(outId).textContent = fmtFn(value) + ' ●';
+    if (fresh) renderSteps();
+    saveMeta();
+    return true;
+  }
+  function syncLockView(){
+    document.body.classList.toggle('stepsel', selStep >= 0);
+    if (selStep >= 0 && pattern[selStep] && pattern[selStep].locks){
+      const L = pattern[selStep].locks;
+      if (L.freq != null){ $('fFreq').value = L.freq; $('oFreq').textContent = (L.freq>0.994?'off':Math.round(80*Math.pow(14000/80,L.freq))+' Hz') + ' ●'; }
+      if (L.gain != null){ $('fGain').value = L.gain; $('oGain').textContent = Math.round(L.gain*100)+'% ●'; }
+      if (L.dmix != null){ $('dMix').value = L.dmix; $('oDMix').textContent = Math.round(L.dmix*100)+'% ●'; }
+    } else {
+      syncControls(); syncDly();
+    }
+  }
+  function applyLocks(chain, st, tFx, t, tEnd){
+    if (!st.locks) return;
+    const L = st.locks;
+    const set = (param, v, base) => { if (!param) return; try{ param.setValueAtTime(v, t); param.setValueAtTime(base, tEnd); }catch(e){} };
+    if (L.freq != null && chain.filterNode){
+      const baseF = 80*Math.pow(14000/80, (tFx.freq < 0.995 ? tFx.freq : 0.6));
+      set(chain.filterNode.frequency, 80*Math.pow(14000/80, Math.min(L.freq, 0.994)), baseF);
+    }
+    if (L.gain != null) set(chain.out.gain, L.gain*(chain.volHead||1), tFx.gain*(chain.volHead||1));
+    if (L.dmix != null && chain.dlyWet){
+      const wet = chain.dlyMode==='serial' ? Math.sin(Math.PI/2*L.dmix) : L.dmix;
+      const baseWet = chain.dlyMode==='serial' ? Math.sin(Math.PI/2*tFx.dly.mix) : tFx.dly.mix;
+      set(chain.dlyWet.gain, wet, baseWet);
+      if (chain.dlyDry) set(chain.dlyDry.gain, Math.cos(L.dmix*Math.PI/2), Math.cos(tFx.dly.mix*Math.PI/2));
+    }
+  }
   $('patBtn').onclick = () => startSeq();
   $('patStopBtn').onclick = () => stopSeq();
   async function startSeq(){
-    if (!cur) return;
     stopPlayback(); stopMix(); stopSeq();
     await ctx.resume();
-    const bounds = sliceBoundaries();
-    const minSlice = Math.min(...bounds.slice(1).map((b2,i)=>b2-bounds[i]));
-    if (minSlice < 0.02){ setSlStatus('Slices too short — lower the grid.'); return; }
-    const bufN = await getSourceBuffer(cur, false, fx.pitch);
-    const bufR = await getSourceBuffer(cur, true, fx.pitch);
-    if (!cur) return;
-    const chain = await buildChain(ctx, fx);
-    const tailNode = chain.out;
-    tailNode.connect(master.in);
+    tracks[activeTrack].len = sset.len;
+    // auto-assign the shelf selection to the active track if it's empty
+    if (tracks[activeTrack].clipId == null && cur) tracks[activeTrack].clipId = cur.id;
+    const playable = [];
+    for (let ti=0; ti<tracks.length; ti++){
+      const t = tracks[ti];
+      const clip = trackClip(t);
+      if (!clip) continue;
+      const bounds = sliceBoundariesFor(clip);
+      const minSlice = Math.min(...bounds.slice(1).map((b2,i)=>b2-bounds[i]));
+      if (minSlice < 0.02){ setSlStatus('T'+(ti+1)+' slices too short — lower the grid.'); continue; }
+      const bufN = await getSourceBuffer(clip, false, t.fx.pitch);
+      const bufR = await getSourceBuffer(clip, true, t.fx.pitch);
+      const chain = await buildChain(ctx, t.fx);
+      const trackGain = ctx.createGain();
+      trackGain.gain.value = t.mute ? 0 : t.gain;
+      chain.out.connect(trackGain);
+      trackGain.connect(master.in);
+      playable.push({ti, t, clip, bounds, bufN, bufR, chain, trackGain});
+    }
+    if (!playable.length){ setSlStatus('No track has a clip — select a clip or hit Assign.'); return; }
     const stepDur = STEP();
-    seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], chain, tailNode, stepDur, bounds };
+    seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], tracks:playable, stepDur };
     const tick = () => {
       while (seq.on){
         const t = stepTimeOf(seq.abs, seq.t0, stepDur);
         if (t >= ctx.currentTime + 0.15) break;
         const tNext = stepTimeOf(seq.abs+1, seq.t0, stepDur);
         const span = tNext - t;
-        const len = sset.len;
-        const stepIdx = seq.abs % len;
-        const loop = Math.floor(seq.abs / len);
-        const st = pattern[stepIdx];
-        let fired = -1;
-        if (st.on && condPass(st.cond, loop, stepIdx)){
-          scheduleStep(ctx, chain, bufN, bufR, st, t, span, bounds);
-          fired = Math.min(st.slice, sset.grid-1);
+        for (const pt of seq.tracks){
+          const len = Math.max(1, pt.t.len);
+          const stepIdx = seq.abs % len;
+          const loop = Math.floor(seq.abs / len);
+          const st = pt.t.pattern[stepIdx];
+          let fired = -1;
+          if (st.on && condPass(st.cond, loop, stepIdx)){
+            scheduleStep(ctx, pt.chain, pt.bufN, pt.bufR, st, t, span, pt.bounds, pt.t.fx);
+            applyLocks(pt.chain, st, pt.t.fx, t, tNext);
+            fired = Math.min(st.slice, sset.grid-1);
+          }
+          if (pt.ti === activeTrack){
+            seq.hits.push({t, span, stepIdx, sliceIdx:fired, clipId:pt.clip.id});
+            if (seq.hits.length > 96) seq.hits.shift();
+          }
         }
-        seq.hits.push({t, span, stepIdx, sliceIdx:fired});
-        if (seq.hits.length > 96) seq.hits.shift();
         seq.abs++;
       }
     };
     tick();
     seq.timer = setInterval(tick, 25);
     $('patBtn').classList.add('toggled');
-    setSlStatus(sset.bpm + ' BPM · ' + sset.len + ' steps · seed ' + sset.seed + (sset.swing>50 ? ' · swing '+sset.swing+'%' : ''));
+    setSlStatus(sset.bpm + ' BPM · ' + playable.map(p=>'T'+(p.ti+1)+':'+p.t.len).join(' ') + ' · seed ' + sset.seed + (sset.swing>50 ? ' · swing '+sset.swing+'%' : ''));
     const anim = () => {
       if (!seq.on) return;
       const now = ctx.currentTime;
-      let activeStep = -1, activeSlice = -1;
-      for (const h of seq.hits) if (now >= h.t && now < h.t + h.span){ activeStep = h.stepIdx; activeSlice = h.sliceIdx; break; }
-      drawWave(null, activeSlice);
+      let activeStep = -1, activeSlice = -1, hitClip = null;
+      for (const h of seq.hits) if (now >= h.t && now < h.t + h.span){ activeStep = h.stepIdx; activeSlice = h.sliceIdx; hitClip = h.clipId; break; }
+      drawWave(null, (cur && hitClip === cur.id) ? activeSlice : -1);
       markPlayingStep(activeStep);
       seq.rafId = requestAnimationFrame(anim);
     };
@@ -2305,9 +2488,11 @@ registerProcessor('cb-delay', CBDelay);`;
     seq.on = false;
     clearInterval(seq.timer);
     cancelAnimationFrame(seq.rafId);
-    try{ (seq.chain && seq.chain.lfos || []).forEach(n => n.stop()); }catch(e){}
-    try{ if (seq.chain && seq.chain.dlyNode) seq.chain.dlyNode.port.postMessage('k'); }catch(e){}
-    try{ seq.tailNode.disconnect(); }catch(e){}
+    for (const pt of (seq.tracks || [])){
+      try{ (pt.chain.lfos || []).forEach(n => n.stop()); }catch(e){}
+      try{ if (pt.chain.dlyNode) pt.chain.dlyNode.port.postMessage('k'); }catch(e){}
+      try{ pt.trackGain.disconnect(); }catch(e){}
+    }
     $('patBtn').classList.remove('toggled');
     setSlStatus('');
     markPlayingStep(-1);
@@ -2317,9 +2502,11 @@ registerProcessor('cb-delay', CBDelay);`;
   // ---- step row UI ----
   let longPressTimer = null;
   function renderSteps(){
+    renderPages();
     const row = $('stepRow');
     row.innerHTML = '';
-    for (let i=0;i<sset.len;i++){
+    const pStart = stepPage*16, pEnd = Math.min(sset.len, pStart+16);
+    for (let i=pStart;i<pEnd;i++){
       const st = pattern[i];
       const el = document.createElement('div');
       el.className = 'stp' + (st.on?'':' off') + (i===selStep?' sel':'');
@@ -2331,10 +2518,11 @@ registerProcessor('cb-delay', CBDelay);`;
       if (st.pitch) tags.push((st.pitch>0?'+':'')+st.pitch);
       if (st.pan) tags.push((st.pan<0?'L':'R')+Math.abs(Math.round(st.pan*100)));
       if (st.gate==='ring') tags.push('~');
+      if (st.locks && Object.keys(st.locks).length) tags.push('P');
       el.innerHTML = `<span class="idx">${i+1}</span>${st.locked?'<span class="lk">🔒</span>':''}
         <span class="n">${st.on ? st.slice+1 : '·'}</span>
         <span class="tags">${tags.join(' ')}</span>`;
-      el.addEventListener('click', () => { selStep = (selStep===i ? -1 : i); renderSteps(); renderInsp(); });
+      el.addEventListener('click', () => { selStep = (selStep===i ? -1 : i); renderSteps(); renderInsp(); syncLockView(); });
       el.addEventListener('contextmenu', e => { e.preventDefault(); pushPatternUndo(); toggleStep(i); });
       el.addEventListener('pointerdown', () => {
         longPressTimer = setTimeout(()=>{ pushPatternUndo(); toggleStep(i); longPressTimer=null; }, 480);
@@ -2590,8 +2778,9 @@ registerProcessor('cb-delay', CBDelay);`;
     if (!cur) return;
     stopSeq(); stopPlayback();
     setSlStatus('Bouncing…');
-    const bounds = sliceBoundaries();
-    const srcClip = cur;
+    const srcClip = trackClip(tracks[activeTrack]) || cur;
+    if (!srcClip){ setSlStatus('No clip on this track.'); return; }
+    const bounds = sliceBoundariesFor(srcClip);
     const bufN = await getSourceBuffer(srcClip, false, fx.pitch);
     const bufR = await getSourceBuffer(srcClip, true, fx.pitch);
     const stepDur = STEP();
@@ -2610,7 +2799,8 @@ registerProcessor('cb-delay', CBDelay);`;
       if (st.on && condPass(st.cond, loop, stepIdx)){
         const t = stepTimeOf(abs, 0.02, stepDur);
         const span = stepTimeOf(abs+1, 0.02, stepDur) - t;
-        scheduleStep(oc, chain, bufN, bufR, st, t, span, bounds);
+        scheduleStep(oc, chain, bufN, bufR, st, t, span, bounds, fx);
+        applyLocks(chain, st, fx, t, stepTimeOf(abs+1, 0.02, stepDur));
       }
     }
     const rendered = await applyMasterOffline(await oc.startRendering());
@@ -2810,6 +3000,7 @@ registerProcessor('cb-delay', CBDelay);`;
   syncDly();
   buildChainUI();
   renderFxBank();
+  renderTracks();
   renderSteps();
   drawWave();
   restore();
