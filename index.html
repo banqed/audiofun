@@ -153,7 +153,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.9</small></h1>
+      <h1>CLIPDECK <small>v0.9.1</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -172,7 +172,9 @@
     <div class="rec-cluster">
       <div class="in-mod">
         <span class="lab">INPUT <output id="oInGain">0 dB</output></span>
-        <input type="range" id="inGain" min="-24" max="24" step="0.5" value="0" title="Input gain — double-click to reset">
+        <input type="range" id="inGain" min="-24" max="24" step="0.5" value="0" title="Print level — double-click to reset">
+        <span class="lab">MON <output id="oMonGain">100%</output></span>
+        <input type="range" id="monGain" min="0" max="1.5" step="0.01" value="1" title="Listening level (desktop capture) — double-click to reset">
       </div>
       <div class="led" id="recLed"></div>
       <button class="rec-btn" id="recBtn" aria-label="Start recording"><span class="dot">REC</span></button>
@@ -441,7 +443,7 @@
       </div>
 
       <div class="notice">
-        <b>Private by design:</b> recording, editing, and storage all happen in your browser — audio never leaves your machine. Desktop capture needs Chrome or Edge and the “Share audio” checkbox in the picker (tab share = tab audio; screen share = system audio on Windows). Clips persist in this browser; use Save project for a portable backup. Ctrl+Z undoes pattern edits, Commit trim, and clip deletes.
+        <b>Private by design:</b> recording, editing, and storage all happen in your browser — audio never leaves your machine. Desktop capture needs Chrome or Edge and the “Share audio” checkbox (tab share = tab audio; screen share = system audio on Windows). Tab shares record at full level no matter where your system volume sits — INPUT sets the print level, MON sets what you hear (the shared tab is muted while recording; if you screen-share instead and hear doubling, pull MON to 0). Clips persist in this browser; use Save project for a portable backup. Ctrl+Z undoes pattern edits, Commit trim, and clip deletes.
       </div>
     </div>
   </div>
@@ -544,7 +546,7 @@ registerProcessor('cb-delay', CBDelay);`;
   let selStep = -1;
   let tapTimes = [];
   const undoStack = [];
-  let inGainDb = 0, recGainNode = null;
+  let inGainDb = 0, recGainNode = null, monLevel = 1, monGainNode = null;
   const mset = { on:false, thr:-24, ratio:4, makeup:0 };
   const dbToLin = v => Math.pow(10, v/20);
   // live master bus: everything audible routes through master.in
@@ -690,7 +692,7 @@ registerProcessor('cb-delay', CBDelay);`;
   const deleteClipDB = id => tx('clips','readwrite', s => s.delete(id)).then(updateStoreInfo).catch(()=>{});
   const saveMeta = () => tx('meta','readwrite', s => {
     s.put(timeline, 'timeline');
-    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, mset:{...mset}, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
+    s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, monLevel, mset:{...mset}, sset:{...sset}, pattern:pattern.map(p=>({...p}))}, 'state');
   }).catch(()=>{});
   const getAll = store => new Promise((res) => {
     if (!db) return res([]);
@@ -742,6 +744,7 @@ registerProcessor('cb-delay', CBDelay);`;
         snapOn = state.snapOn !== false;
         uiMode = state.uiMode || 'deck'; // pre-v0.5 users were already in the deep end
         if (typeof state.inGainDb === 'number') inGainDb = state.inGainDb;
+        if (typeof state.monLevel === 'number') monLevel = state.monLevel;
         if (state.mset) Object.assign(mset, state.mset);
         if (state.sset) Object.assign(sset, state.sset);
         if (Array.isArray(state.pattern)) pattern = pattern.map((p,i)=> state.pattern[i] ? {...defaultStep(i), ...state.pattern[i]} : p);
@@ -1153,7 +1156,7 @@ registerProcessor('cb-delay', CBDelay);`;
           audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:{ideal:2} },
           systemAudio:'include',            // surface the system-audio option on screen shares
           selfBrowserSurface:'exclude',     // hide CLIPDECK's own (silent) tab from the picker
-          suppressLocalAudioPlayback:false  // keep the captured tab audible while recording
+          suppressLocalAudioPlayback:true   // mute the shared tab locally; MON is the listening path
         });
         if (mediaStream.getAudioTracks().length === 0){
           mediaStream.getTracks().forEach(t=>t.stop());
@@ -1183,6 +1186,13 @@ registerProcessor('cb-delay', CBDelay);`;
     recDest.channelCount = 2;
     rawSrc.connect(recGainNode);
     recGainNode.connect(recDest);
+    if (source === 'desktop'){
+      // listening path: raw capture at MON level through the master bus (tab is muted by suppression)
+      monGainNode = ctx.createGain();
+      monGainNode.gain.value = monLevel;
+      rawSrc.connect(monGainNode);
+      monGainNode.connect(master.in);
+    }
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
     recorder = new MediaRecorder(recDest.stream, Object.assign({audioBitsPerSecond:256000}, mime ? {mimeType:mime} : {}));
     recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
@@ -1225,6 +1235,7 @@ registerProcessor('cb-delay', CBDelay);`;
     mediaStream.getTracks().forEach(t=>t.stop());
     recorder = null;
     recGainNode = null;
+    if (monGainNode){ try{ monGainNode.disconnect(); }catch(e){} monGainNode = null; }
     const blob = new Blob(recChunks, {type: recChunks[0]?.type || 'audio/webm'});
     if (!blob.size){ setStatus('Nothing captured.'); return; }
     setStatus('Decoding…');
@@ -1569,6 +1580,12 @@ registerProcessor('cb-delay', CBDelay);`;
     if (recGainNode) recGainNode.gain.value = dbToLin(inGainDb);
     saveMeta();
   });
+  $('monGain').addEventListener('input', e => {
+    monLevel = parseFloat(e.target.value);
+    $('oMonGain').textContent = Math.round(monLevel*100) + '%';
+    if (monGainNode) monGainNode.gain.setTargetAtTime(monLevel, ctx.currentTime, 0.02);
+    saveMeta();
+  });
   // master bus controls
   $('compBtn').onclick = () => {
     mset.on = !mset.on;
@@ -1598,6 +1615,8 @@ registerProcessor('cb-delay', CBDelay);`;
     $('mMakeup').value = mset.makeup; $('oMMakeup').textContent = (mset.makeup % 1 ? mset.makeup.toFixed(1) : mset.makeup) + ' dB';
     $('inGain').value = inGainDb;
     $('oInGain').textContent = (inGainDb>0?'+':'') + (inGainDb % 1 ? inGainDb.toFixed(1) : inGainDb) + ' dB';
+    $('monGain').value = monLevel;
+    $('oMonGain').textContent = Math.round(monLevel*100) + '%';
   }
   // gain-reduction readout
   setInterval(() => {
@@ -1754,13 +1773,14 @@ registerProcessor('cb-delay', CBDelay);`;
   // ---- FX preset bank: 5 factory + 5 user (persisted) ----
   const deepFx = f => ({...f, lfos: f.lfos.map(l=>({...l})), dly: {...f.dly}});
   const mkFactory = over => { const f = fxDefaults(); Object.assign(f, over.base||{}); if (over.dly) f.dly = {...f.dly, ...over.dly}; if (over.lfo0) f.lfos[0] = {...f.lfos[0], ...over.lfo0}; return f; };
-  const FACTORY = [
+  let FACTORY_CACHE = null;
+  const factoryPresets = () => FACTORY_CACHE || (FACTORY_CACHE = [
     {name:'Clean',     fx: mkFactory({})},
     {name:'Chipmunk',  fx: mkFactory({base:{rate:1.6}})},
     {name:'Telephone', fx: mkFactory({base:{type:'bandpass', freq:0.58, crunch:0.25}})},
     {name:'Cave',      fx: mkFactory({base:{verb:0.85}})},
     {name:'Dub',       fx: mkFactory({base:{verb:0.2}, dly:DLY_PRESETS.dub})}
-  ];
+  ]);
   let userBank = [null,null,null,null,null];
   function applyFxPreset(obj){
     Object.assign(fx, fxDefaults(), deepFx(obj));
@@ -1769,7 +1789,7 @@ registerProcessor('cb-delay', CBDelay);`;
   function renderFxBank(){
     const row = $('fxBankRow');
     row.innerHTML = '';
-    FACTORY.forEach(f => {
+    factoryPresets().forEach(f => {
       const b = document.createElement('button');
       b.className = 'chip'; b.dataset.c = 'blue';
       b.textContent = f.name;
@@ -1804,7 +1824,7 @@ registerProcessor('cb-delay', CBDelay);`;
     dMix:0, dTime:0.34, dFb:0.35, dTone:0.5, dPitch:0, dDrive:0.3, dModD:0, dModR:0.8,
     xRate:1, xVerb:0, xGain:1,
     sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
-    fCross:0, inGain:0, mThr:-24, mRatio:4, mMakeup:0
+    fCross:0, inGain:0, monGain:1, mThr:-24, mRatio:4, mMakeup:0
   };
   document.querySelectorAll('input[type=range]').forEach(el => {
     el.addEventListener('dblclick', () => {
