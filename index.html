@@ -146,7 +146,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.7</small></h1>
+      <h1>CLIPDECK <small>v0.8</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -334,7 +334,6 @@
           <button class="chip" data-c="green" data-p="cave">Cave</button>
           <button class="chip" data-c="green" data-p="echo">Space echo</button>
           <button class="chip" data-c="red" data-p="crunch">Crunch</button>
-          <button class="chip" data-c="green" data-p="wobble">Wobble</button>
           <button class="chip" data-c="amber" data-p="clean">Clean</button>
         </div>
         <div class="sliders">
@@ -344,14 +343,6 @@
             <input type="range" id="fPitch" min="-12" max="12" step="1" value="0"></div>
           <div class="sl"><label>Pan <output id="oPan">C</output></label>
             <input type="range" id="fPan" min="-1" max="1" step="0.01" value="0"></div>
-          <div class="sl"><label>LFO rate <output id="oLfoRate">1.0 Hz</output></label>
-            <input type="range" id="fLfoRate" min="0.1" max="12" step="0.1" value="1"></div>
-          <div class="sl"><label>LFO depth <output id="oLfoDepth">off</output></label>
-            <input type="range" id="fLfoDepth" min="0" max="1" step="0.01" value="0"></div>
-          <div class="sl"><label>LFO shape</label>
-            <select id="fLfoShape"><option value="sine">Sine</option><option value="triangle">Triangle</option><option value="square">Square</option></select></div>
-          <div class="sl"><label>LFO →</label>
-            <select id="fLfoDest"><option value="pan">Pan</option><option value="filter">Filter</option><option value="volume">Volume</option><option value="speed">Speed</option></select></div>
           <div class="sl"><label>Reverb <output id="oVerb">0%</output></label>
             <input type="range" id="fVerb" min="0" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Echo <output id="oDelay">0%</output></label>
@@ -379,20 +370,6 @@
         </div>
       </div>
 
-      <!-- TIMELINE (deck) -->
-      <div class="well deck-only">
-        <div class="label">Timeline <span id="tlTotal">0 items</span></div>
-        <div class="tl-track" id="tlTrack"></div>
-        <div class="tl-controls">
-          <div class="sl"><label>Crossfade <output id="oCross">0.0s</output></label>
-            <input type="range" id="fCross" min="0" max="2" step="0.1" value="0"></div>
-          <button class="hbtn primary" id="mixPlayBtn" disabled>▶ Preview mix</button>
-          <button class="hbtn" id="mixStopBtn" disabled>■ Stop</button>
-          <button class="hbtn primary" id="mixExportBtn" disabled>Export mix WAV</button>
-          <span class="status" id="tlStatus"></span>
-        </div>
-      </div>
-
       <div class="well deck-only">
         <div class="label">Master bus <span>comp → limiter → out · applies to playback and every export</span></div>
         <div class="sl-row" style="margin-bottom:0">
@@ -407,6 +384,26 @@
           <div class="sl"><label>Limiter</label>
             <button class="mini" id="limitBtn">On</button></div>
           <span class="status" id="oGR"></span>
+        </div>
+      </div>
+
+      <!-- LFOS (deck) -->
+      <div class="well deck-only">
+        <div class="label">LFOs <span>4 slots · one destination each · mod flows downhill (LFO1 → 2/3/4)</span></div>
+        <div id="lfoRows"></div>
+      </div>
+
+      <!-- TIMELINE (deck) -->
+      <div class="well deck-only">
+        <div class="label">Timeline <span id="tlTotal">0 items</span></div>
+        <div class="tl-track" id="tlTrack"></div>
+        <div class="tl-controls">
+          <div class="sl"><label>Crossfade <output id="oCross">0.0s</output></label>
+            <input type="range" id="fCross" min="0" max="2" step="0.1" value="0"></div>
+          <button class="hbtn primary" id="mixPlayBtn" disabled>▶ Preview mix</button>
+          <button class="hbtn" id="mixStopBtn" disabled>■ Stop</button>
+          <button class="hbtn primary" id="mixExportBtn" disabled>Export mix WAV</button>
+          <span class="status" id="tlStatus"></span>
         </div>
       </div>
 
@@ -480,7 +477,8 @@
   }
 
   const $ = id => document.getElementById(id);
-  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, lfoRate:1, lfoDepth:0, lfoShape:'sine', lfoDest:'pan', pingpong:false };
+  const mkLfos = () => Array.from({length:4}, () => ({rate:1, depth:0, shape:'sine', sync:'free', dest:'off'}));
+  const fx = { rate:1, pitch:0, verb:0, delay:0, fb:0.35, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, pingpong:false, lfos: mkLfos() };
   const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
   let pattern = Array.from({length:32}, (_,i)=>defaultStep(i));
@@ -824,20 +822,61 @@
     setStatus('');
     return shifted;
   }
+  // shared S&H random-step buffer per live context
+  let randBufLive = null;
+  function randStepBuffer(c){
+    if (c === ctx && randBufLive) return randBufLive;
+    const steps = 128, per = 256;
+    const buf = c.createBuffer(1, steps*per, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let s=0;s<steps;s++){
+      const v = Math.random()*2-1;
+      d.fill(v, s*per, (s+1)*per);
+    }
+    if (c === ctx) randBufLive = buf;
+    return buf;
+  }
+  function makeLfoSource(c, shape, freq){
+    if (shape === 'random'){ // sample & hold: looped random steps, rate via playbackRate
+      const src = c.createBufferSource();
+      src.buffer = randStepBuffer(c);
+      src.loop = true;
+      const base = c.sampleRate/256; // step rate at playbackRate 1
+      src.playbackRate.value = Math.max(0.001, freq)/base;
+      src.start(0);
+      return { node: src, freqParam: src.playbackRate, freqScale: 1/base };
+    }
+    const o = c.createOscillator();
+    o.type = shape;
+    o.frequency.value = freq;
+    o.start(0);
+    return { node: o, freqParam: o.frequency, freqScale: 1 };
+  }
   function buildChain(c, p){
+    const lfoDefs = (p.lfos || []).map(l => ({...l}));
+    const active = lfoDefs.map(l => (l && l.dest !== 'off' && l.depth > 0.005) ? l : null);
+    const targeted = new Set(active.filter(Boolean).map(l => l.dest));
+
     const input = c.createGain();
     let node = input;
-    if (p.crunch > 0.01){
+    // crunch as parallel dry/wet so the amount is a modulation target
+    let crunchWet = null, crunchDry = null;
+    if (p.crunch > 0.01 || targeted.has('crunch')){
       const ws = c.createWaveShaper();
-      ws.curve = distortionCurve(p.crunch);
+      ws.curve = distortionCurve(Math.max(p.crunch, 0.15));
       ws.oversample = '2x';
-      node.connect(ws); node = ws;
+      const sum = c.createGain();
+      crunchDry = c.createGain(); crunchDry.gain.value = 1 - p.crunch;
+      crunchWet = c.createGain(); crunchWet.gain.value = p.crunch;
+      node.connect(crunchDry); crunchDry.connect(sum);
+      node.connect(ws); ws.connect(crunchWet); crunchWet.connect(sum);
+      node = sum;
     }
     let filterNode = null;
-    if (p.freq < 0.995 || (p.lfoDepth > 0.01 && p.lfoDest === 'filter')){
+    if (p.freq < 0.995 || targeted.has('filter')){
       const f = c.createBiquadFilter();
       f.type = p.type;
-      const effFreq = p.freq < 0.995 ? p.freq : 0.6; // filter "off" but LFO-targeted → park it mid-band
+      const effFreq = p.freq < 0.995 ? p.freq : 0.6;
       f.frequency.value = 80 * Math.pow(14000/80, effFreq);
       if (p.type==='bandpass') f.Q.value = 1.2;
       filterNode = f;
@@ -845,67 +884,86 @@
     }
     const post = c.createGain();
     node.connect(post);
-    if (p.delay > 0.01){
-      const wet = c.createGain(); wet.gain.value = p.delay;
+    let echoWet = null, echoFb = null, echoTimes = [];
+    if (p.delay > 0.01 || targeted.has('echomix') || targeted.has('echofb') || targeted.has('echotime')){
+      echoWet = c.createGain(); echoWet.gain.value = p.delay;
+      echoFb = c.createGain(); echoFb.gain.value = p.fb;
       if (p.pingpong){
-        // classic ping-pong: L delay feeds R delay, cross-fed back, hard-panned taps
         const dL = c.createDelay(1.2); dL.delayTime.value = 0.34;
         const dR = c.createDelay(1.2); dR.delayTime.value = 0.34;
-        const fb = c.createGain(); fb.gain.value = p.fb;
         const merge = c.createChannelMerger(2);
         node.connect(dL);
         dL.connect(merge, 0, 0);
         dL.connect(dR);
         dR.connect(merge, 0, 1);
-        dR.connect(fb); fb.connect(dL);
-        merge.connect(wet); wet.connect(post);
+        dR.connect(echoFb); echoFb.connect(dL);
+        merge.connect(echoWet); echoWet.connect(post);
+        echoTimes = [dL.delayTime, dR.delayTime];
       } else {
         const d = c.createDelay(1.2); d.delayTime.value = 0.34;
-        const fb = c.createGain(); fb.gain.value = p.fb;
-        node.connect(d); d.connect(fb); fb.connect(d);
-        d.connect(wet); wet.connect(post);
+        node.connect(d); d.connect(echoFb); echoFb.connect(d);
+        d.connect(echoWet); echoWet.connect(post);
+        echoTimes = [d.delayTime];
       }
     }
-    if (p.verb > 0.01){
+    let verbWet = null;
+    if (p.verb > 0.01 || targeted.has('verb')){
       const cv = c.createConvolver();
       cv.buffer = (c === ctx && reverbIR) ? reverbIR : makeImpulse(c);
       if (c === ctx && !reverbIR) reverbIR = cv.buffer;
-      const wet = c.createGain(); wet.gain.value = p.verb*1.4;
-      node.connect(cv); cv.connect(wet); wet.connect(post);
+      verbWet = c.createGain(); verbWet.gain.value = p.verb*1.4;
+      node.connect(cv); cv.connect(verbWet); verbWet.connect(post);
     }
-    // pan sits after the wet/dry sum so the whole voice moves together
     const panner = c.createStereoPanner();
     const basePan = Math.max(-1, Math.min(1, p.pan || 0));
     panner.pan.value = basePan;
     post.connect(panner);
     const out = c.createGain(); out.gain.value = p.gain;
     panner.connect(out);
-    // routable LFO
-    let lfo = null, speedMod = null;
-    if ((p.lfoDepth || 0) > 0.01){
-      lfo = c.createOscillator();
-      lfo.type = p.lfoShape || 'sine';
-      lfo.frequency.value = Math.max(0.05, p.lfoRate || 1);
-      const lg = c.createGain();
-      if (p.lfoDest === 'filter' && filterNode){
-        lg.gain.value = filterNode.frequency.value * 0.85 * p.lfoDepth; // sweep proportional to base freq
-        lfo.connect(lg); lg.connect(filterNode.frequency);
-      } else if (p.lfoDest === 'volume'){
-        out.gain.value = p.gain * (1 - p.lfoDepth/2);      // headroom: tremolo swings 0..gain
-        lg.gain.value = p.gain * p.lfoDepth/2;
-        lfo.connect(lg); lg.connect(out.gain);
-      } else if (p.lfoDest === 'speed'){
-        lg.gain.value = p.lfoDepth * 0.5 * p.rate;         // wow/vibrato relative to base rate
-        lfo.connect(lg);
-        speedMod = lg;                                      // callers connect this to each source's playbackRate
-      } else { // pan
-        lg.gain.value = Math.min(1, p.lfoDepth) * (1 - Math.abs(basePan));
-        lfo.connect(lg); lg.connect(panner.pan);
-      }
-      lfo.start(0);
+
+    // ---- LFO bank: 4 slots, exclusive destinations, downhill cross-mod ----
+    const bpmFreq = l => {
+      if (l.sync === 'free') return l.rate;
+      const beats = {'1/16':0.25,'1/8':0.5,'1/4':1,'1/2':2,'1bar':4,'2bars':8}[l.sync] || 1;
+      return (sset.bpm/60) / beats;
+    };
+    const sources = [null,null,null,null];
+    for (let i=0;i<4;i++){
+      if (active[i]) sources[i] = makeLfoSource(c, active[i].shape, Math.max(0.02, bpmFreq(active[i])));
     }
-    const tail = (p.verb>0.01?2.4:0) + (p.delay>0.01?1.5:0);
-    return { input, out, tail, lfo, speedMod };
+    const volLfo = active.find(l => l && l.dest === 'volume');
+    if (volLfo) out.gain.value = p.gain * (1 - volLfo.depth/2); // tremolo headroom
+    let speedMod = null;
+    for (let i=0;i<4;i++){
+      const l = active[i];
+      if (!l) continue;
+      const src = sources[i];
+      const route = (param, amount) => {
+        const g = c.createGain(); g.gain.value = amount;
+        src.node.connect(g); g.connect(param);
+      };
+      switch (l.dest){
+        case 'pan':      route(panner.pan, Math.min(1, l.depth) * (1 - Math.abs(basePan))); break;
+        case 'filter':   if (filterNode) route(filterNode.frequency, filterNode.frequency.value * 0.85 * l.depth); break;
+        case 'volume':   route(out.gain, p.gain * l.depth/2); break;
+        case 'speed':    { const g = c.createGain(); g.gain.value = l.depth * 0.5 * p.rate; src.node.connect(g); speedMod = g; } break;
+        case 'echomix':  if (echoWet) route(echoWet.gain, l.depth * 0.5); break;
+        case 'echofb':   if (echoFb) route(echoFb.gain, l.depth * 0.4); break;
+        case 'echotime': echoTimes.forEach(t => route(t, l.depth * 0.15)); break;
+        case 'verb':     if (verbWet) route(verbWet.gain, l.depth * 0.7); break;
+        case 'crunch':   if (crunchWet){ route(crunchWet.gain, l.depth * 0.5); route(crunchDry.gain, -l.depth * 0.5); } break;
+        default:
+          if (l.dest.startsWith('lfo')){
+            const j = parseInt(l.dest.slice(3),10) - 1;
+            if (j > i && sources[j] && active[j]){
+              route(sources[j].freqParam, l.depth * Math.max(0.02, bpmFreq(active[j])) * 2 * sources[j].freqScale);
+            }
+          }
+      }
+    }
+    const lfoNodes = sources.filter(Boolean).map(s => s.node);
+    const tail = ((p.verb>0.01||targeted.has('verb'))?2.4:0) + ((p.delay>0.01||targeted.has('echomix'))?1.5:0);
+    return { input, out, tail, lfos: lfoNodes, speedMod };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -947,7 +1005,7 @@
   }
   const snapshotCurrent = () => ({
     uid: uidSeq++, clipId: cur.id, name: cur.name,
-    trimA, trimB, reversed, fx: {...fx}
+    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l}))}
   });
 
   // ================= recording =================
@@ -1179,9 +1237,15 @@
       const el = document.createElement('div');
       el.className = 'clip' + (cur===c?' sel':'');
       el.innerHTML = `<div class="name" contenteditable spellcheck="false"></div>
-        <div class="meta"><span>${fmt(c.duration)} · ${c.buffer.numberOfChannels>1?'ST':'M'}</span><button class="del" title="Delete">✕</button></div>`;
+        <div class="meta"><span>${fmt(c.duration)} · ${c.buffer.numberOfChannels>1?'ST':'M'}</span><span><button class="del exp" title="Export WAV" style="margin-right:2px">⤓</button><button class="del" title="Delete">✕</button></span></div>`;
       el.querySelector('.name').textContent = c.name;
-      el.onclick = e => { if (e.target.classList.contains('del') || e.target.classList.contains('name')) return; selectClip(c, false); };
+      el.onclick = e => { if (e.target.classList.contains('del') || e.target.classList.contains('exp') || e.target.classList.contains('name')) return; selectClip(c, false); };
+      el.querySelector('.exp').onclick = async e => {
+        e.stopPropagation();
+        setStatus('Exporting ' + c.name + '…');
+        downloadWav(await applyMasterOffline(c.buffer), c.name);
+        setStatus('Exported ' + c.name + ' (raw' + ((mset.on||limiter)?' + master bus':'') + ').');
+      };
       el.querySelector('.name').addEventListener('blur', ev => {
         c.name = ev.target.textContent.trim() || c.name; ev.target.textContent = c.name;
         if (cur===c) $('clipTitle').textContent = c.name;
@@ -1378,10 +1442,6 @@
   bind('fGain','gain','oGain', v=>Math.round(v*100)+'%');
   const panFmt = v => Math.abs(v)<0.01 ? 'C' : (v<0?'L':'R')+Math.abs(Math.round(v*100));
   bind('fPan','pan','oPan', panFmt);
-  bind('fLfoRate','lfoRate','oLfoRate', v=>v.toFixed(1)+' Hz');
-  bind('fLfoDepth','lfoDepth','oLfoDepth', v=>v<0.01?'off':Math.round(v*100)+'%');
-  $('fLfoShape').addEventListener('change', e => { fx.lfoShape = e.target.value; restartIfPlaying(); });
-  $('fLfoDest').addEventListener('change', e => { fx.lfoDest = e.target.value; restartIfPlaying(); });
   $('ppBtn').onclick = () => {
     fx.pingpong = !fx.pingpong;
     $('ppBtn').classList.toggle('toggled', fx.pingpong);
@@ -1431,9 +1491,70 @@
       $('oGR').textContent = gr < -0.1 ? 'GR ' + gr.toFixed(1) + ' dB' : 'GR —';
     } else $('oGR').textContent = '';
   }, 150);
+  // ---- LFO section UI ----
+  const LFO_DESTS = [
+    ['off','Off'],['pan','Pan'],['filter','Filter'],['volume','Volume'],['speed','Speed'],
+    ['echomix','Echo mix'],['echotime','Echo time'],['echofb','Echo feedback'],['verb','Reverb'],['crunch','Crunch']
+  ];
+  function buildLfoUI(){
+    const box = $('lfoRows');
+    box.innerHTML = '';
+    fx.lfos.forEach((l, i) => {
+      const row = document.createElement('div');
+      row.className = 'sl-row';
+      row.style.cssText = 'border-bottom:1px solid var(--well-deep);padding-bottom:10px;margin-bottom:10px' + (i===3?';border-bottom:0;margin-bottom:0;padding-bottom:0':'');
+      row.innerHTML = `
+        <div class="sl"><label>LFO ${i+1}</label>
+          <select data-k="shape"><option value="sine">Sine</option><option value="triangle">Triangle</option><option value="square">Square</option><option value="sawtooth">Saw</option><option value="random">S&amp;H</option></select></div>
+        <div class="sl"><label>Sync</label>
+          <select data-k="sync"><option value="free">Free</option><option value="1/16">1/16</option><option value="1/8">1/8</option><option value="1/4">1/4</option><option value="1/2">1/2</option><option value="1bar">1 bar</option><option value="2bars">2 bars</option></select></div>
+        <div class="sl"><label>Rate <output>1.0 Hz</output></label>
+          <input type="range" data-k="rate" min="0.1" max="16" step="0.1" value="1" style="width:120px" title="Double-click to reset"></div>
+        <div class="sl"><label>Depth <output>off</output></label>
+          <input type="range" data-k="depth" min="0" max="1" step="0.01" value="0" style="width:120px" title="Double-click to reset"></div>
+        <div class="sl"><label>→ Destination</label>
+          <select data-k="dest"></select></div>`;
+      const destSel = row.querySelector('[data-k=dest]');
+      const opts = LFO_DESTS.slice();
+      for (let j=i+1;j<4;j++) opts.push(['lfo'+(j+1), 'LFO '+(j+1)+' rate']);
+      for (const [v,t] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; destSel.appendChild(o); }
+      const rateIn = row.querySelector('[data-k=rate]');
+      const depthIn = row.querySelector('[data-k=depth]');
+      const outs = row.querySelectorAll('output');
+      const updOuts = () => {
+        outs[0].textContent = l.sync==='free' ? l.rate.toFixed(1)+' Hz' : l.sync;
+        outs[1].textContent = l.depth<0.01 ? 'off' : Math.round(l.depth*100)+'%';
+        rateIn.disabled = l.sync!=='free';
+        rateIn.style.opacity = l.sync!=='free' ? .4 : 1;
+      };
+      row.querySelector('[data-k=shape]').value = l.shape;
+      row.querySelector('[data-k=sync]').value = l.sync;
+      rateIn.value = l.rate;
+      depthIn.value = l.depth;
+      destSel.value = l.dest;
+      row.querySelector('[data-k=shape]').onchange = e => { l.shape = e.target.value; restartIfPlaying(); };
+      row.querySelector('[data-k=sync]').onchange = e => { l.sync = e.target.value; updOuts(); restartIfPlaying(); };
+      rateIn.addEventListener('input', e => { l.rate = parseFloat(e.target.value); updOuts(); restartIfPlaying(); });
+      rateIn.addEventListener('dblclick', () => { l.rate = 1; rateIn.value = 1; updOuts(); restartIfPlaying(); });
+      depthIn.addEventListener('input', e => { l.depth = parseFloat(e.target.value); updOuts(); restartIfPlaying(); });
+      depthIn.addEventListener('dblclick', () => { l.depth = 0; depthIn.value = 0; updOuts(); restartIfPlaying(); });
+      destSel.onchange = e => { l.dest = e.target.value; refreshDestExclusivity(); restartIfPlaying(); };
+      updOuts();
+      box.appendChild(row);
+    });
+    refreshDestExclusivity();
+  }
+  function refreshDestExclusivity(){
+    const taken = fx.lfos.map(l => l.dest);
+    document.querySelectorAll('#lfoRows [data-k=dest]').forEach((sel, i) => {
+      [...sel.options].forEach(o => {
+        o.disabled = o.value !== 'off' && o.value !== fx.lfos[i].dest && taken.includes(o.value);
+      });
+    });
+  }
   // double-click any slider to snap it back to neutral
   const SLIDER_DEFAULTS = {
-    fRate:1, fPitch:0, fPan:0, fLfoRate:1, fLfoDepth:0, fVerb:0, fDelay:0, fFb:0.35,
+    fRate:1, fPitch:0, fPan:0, fVerb:0, fDelay:0, fFb:0.35,
     fCrunch:0, fFreq:1, fFadeIn:0, fFadeOut:0, fGain:1,
     xRate:1, xVerb:0, xGain:1,
     sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
@@ -1471,13 +1592,12 @@
     phone:{type:'bandpass', freq:0.58, crunch:0.25},
     cave:{verb:0.85}, echo:{delay:0.6, fb:0.55, verb:0.2, pingpong:true},
     crunch:{crunch:0.8, gain:0.8},
-    wobble:{lfoDepth:0.9, lfoRate:4, lfoDest:'pan'},
     clean:{}
   };
-  const FX_DEFAULT = {rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,lfoRate:1,lfoDepth:0,lfoShape:'sine',lfoDest:'pan',pingpong:false};
+  const fxDefaults = () => ({rate:1,pitch:0,verb:0,delay:0,fb:0.35,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,pingpong:false,lfos:mkLfos()});
   document.querySelectorAll('.chip[data-p]').forEach(ch => ch.onclick = () => {
-    Object.assign(fx, FX_DEFAULT, presets[ch.dataset.p]);
-    syncControls(); syncSimple(); restartIfPlaying();
+    Object.assign(fx, fxDefaults(), presets[ch.dataset.p]);
+    syncControls(); syncSimple(); buildLfoUI(); restartIfPlaying();
   });
   function syncControls(){
     $('fRate').value=fx.rate; $('oRate').textContent=fx.rate.toFixed(2)+'×';
@@ -1492,10 +1612,6 @@
     $('fFadeOut').value=fx.fadeOut; $('oFadeOut').textContent=fx.fadeOut.toFixed(1)+'s';
     $('fGain').value=fx.gain; $('oGain').textContent=Math.round(fx.gain*100)+'%';
     $('fPan').value=fx.pan; $('oPan').textContent=panFmt(fx.pan);
-    $('fLfoRate').value=fx.lfoRate; $('oLfoRate').textContent=fx.lfoRate.toFixed(1)+' Hz';
-    $('fLfoDepth').value=fx.lfoDepth; $('oLfoDepth').textContent=fx.lfoDepth<0.01?'off':Math.round(fx.lfoDepth*100)+'%';
-    $('fLfoShape').value=fx.lfoShape;
-    $('fLfoDest').value=fx.lfoDest;
     $('ppBtn').classList.toggle('toggled', !!fx.pingpong);
   }
   $('revBtn').onclick = () => {
@@ -1554,7 +1670,7 @@
   function stopPlayback(){
     if (!playing) return;
     try{ playing.src.onended=null; playing.src.stop(); }catch(e){}
-    try{ if (playing.chain && playing.chain.lfo) playing.chain.lfo.stop(); }catch(e){}
+    try{ (playing.chain && playing.chain.lfos || []).forEach(n => n.stop()); }catch(e){}
     try{ playing.tailNode.disconnect(); }catch(e){}
     cancelAnimationFrame(playing.rafId);
     playing = null; drawWave();
@@ -1673,7 +1789,7 @@
     seq.on = false;
     clearInterval(seq.timer);
     cancelAnimationFrame(seq.rafId);
-    try{ if (seq.chain && seq.chain.lfo) seq.chain.lfo.stop(); }catch(e){}
+    try{ (seq.chain && seq.chain.lfos || []).forEach(n => n.stop()); }catch(e){}
     try{ seq.tailNode.disconnect(); }catch(e){}
     $('patBtn').classList.remove('toggled');
     setSlStatus('');
@@ -1982,8 +2098,8 @@
     const blob = new Blob([encodeWav(rendered)], {type:'audio/wav'});
     addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed, false);
     // the FX are printed into the bounce — reset the live chain so playback isn't double-processed
-    Object.assign(fx, FX_DEFAULT);
-    syncControls(); syncSimple();
+    Object.assign(fx, fxDefaults());
+    syncControls(); syncSimple(); buildLfoUI();
     setSlStatus('Bounced → shelf · FX printed, chain reset.');
   };
 
@@ -2171,6 +2287,7 @@
   syncSimple();
   syncMaster();
   rebuildMaster();
+  buildLfoUI();
   renderSteps();
   drawWave();
   restore();
