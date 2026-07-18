@@ -114,12 +114,26 @@
   .fxcard-h .sl{min-width:150px;margin-left:8px}
   .fxcard-b .sliders{margin-top:4px}
   .card-note{font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:2px 0 6px}
-  .ttab{display:flex;align-items:center;gap:6px;background:var(--panel-hi);border-radius:8px;padding:6px 10px;box-shadow:0 2px 4px rgba(0,0,0,.15);border:2px solid transparent}
+  .ttab{display:flex;align-items:center;gap:5px;background:var(--panel-hi);border-radius:8px;padding:4px 8px;box-shadow:0 2px 4px rgba(0,0,0,.15);border:2px solid transparent}
+  .ttab .tcode{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--ink-soft);cursor:pointer}
+  #trackRow{flex-wrap:wrap;gap:6px}
   .ttab.on{border-color:var(--amber)}
   .ttab .tname{font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer}
-  .ttab .tclip{font-family:var(--mono);font-size:9px;color:var(--ink-soft);max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ttab input[type=range]{width:80px;height:18px}
+  .ttab .tclip{font-family:var(--mono);font-size:9px;color:var(--ink-soft);max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  .ttab input[type=range]{width:52px;height:18px}
   .ttab .mini.muted{background:var(--rec);color:#fff}
+  .ttab .typ.fmon{background:var(--amber);color:var(--ink)}
+  .fmscreen{background:#171b17;border-radius:10px;padding:10px 12px 12px;box-shadow:inset 0 2px 8px rgba(0,0,0,.5)}
+  .fmpages{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+  .fmpg{font-family:var(--mono);font-size:9px;letter-spacing:.12em;padding:3px 10px;border-radius:4px;border:1px solid #3a453a;background:#222922;color:#8fa78f;cursor:pointer}
+  .fmpg.on{background:var(--amber);border-color:var(--amber);color:#1a1a14;font-weight:700}
+  .fmpgname{font-family:var(--mono);font-size:9px;color:#5c6e5c;letter-spacing:.08em;margin-left:auto}
+  .fmgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 12px}
+  .fmcell{display:flex;flex-direction:column;gap:2px}
+  .fmk{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:#8fa78f}
+  .fmv{font-family:var(--mono);font-size:12px;color:#e8f2e2;min-height:15px}
+  .fmcell input[type=range]{width:100%;height:14px;accent-color:var(--amber)}
+  .fmcell select{background:#222922;color:#e8f2e2;border:1px solid #3a453a;border-radius:4px;font-family:var(--mono);font-size:10px;padding:2px}
   body.stepsel .sl:has(#fFreq) label, body.stepsel .sl:has(#fGain) label, body.stepsel .sl:has(#dMix) label{color:var(--amber);font-weight:700}
   body.stepsel .sl:has(#fFreq) input::-webkit-slider-thumb, body.stepsel .sl:has(#fGain) input::-webkit-slider-thumb, body.stepsel .sl:has(#dMix) input::-webkit-slider-thumb{background:linear-gradient(#FFC076,var(--amber));border-color:#B65F0D}
   .pgbtn.playing{box-shadow:0 0 0 2px var(--amber)}
@@ -170,7 +184,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.12.2</small></h1>
+      <h1>CLIPDECK <small>v0.19</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -237,6 +251,32 @@
         </div>
       </div>
 
+      <!-- FM VOICE (deck, fm tracks) -->
+      <div class="well deck-only" id="fmWell">
+        <div class="label">Voice — <span id="fmTrackLbl">CH 5</span> <span>this channel owns this patch · channels 5–8 are voice channels</span></div>
+        <div class="presets">
+          <button class="chip" data-c="red" data-fp="bass">Bass</button>
+          <button class="chip" data-c="blue" data-fp="keys">Keys</button>
+          <button class="chip" data-c="green" data-fp="bell">Bell</button>
+          <button class="chip" data-c="amber" data-fp="pluck">Pluck</button>
+          <button class="chip" data-fp="init">Init</button>
+          <button class="chip" data-c="red" data-fp="kick">Kick</button>
+          <button class="chip" data-c="amber" data-fp="snar">Snare</button>
+          <button class="chip" data-c="blue" data-fp="hatc">Hat·</button>
+          <button class="chip" data-c="green" data-fp="hato">Hat+</button>
+          <button class="chip" data-c="amber" id="fmAudition">▶ note</button>
+        </div>
+        <div class="fmscreen">
+          <div class="fmpages">
+            <button class="fmpg on" data-fmpg="syn">SYN</button>
+            <button class="fmpg" data-fmpg="env">ENV</button>
+            <button class="fmpg" data-fmpg="amp">AMP</button>
+            <span class="fmpgname" id="fmPgName">sound identity</span>
+          </div>
+          <div class="fmgrid" id="fmGrid"></div>
+        </div>
+      </div>
+
       <!-- SIMPLE MODE quick strip -->
       <div class="well simple-only">
         <div class="label">Quick effects</div>
@@ -256,8 +296,14 @@
 
       <!-- SEQUENCER (deck) -->
       <div class="well deck-only">
-        <div class="label">Sequencer <span id="slHint">tracks → slices → steps · select a step, then Filter/Volume/Delay-mix sliders write P-locks</span></div>
+        <div class="label">Sequencer <span id="slHint">select a step · Filter/Volume/Delay-mix write P-locks</span></div>
         <div class="sl-row" id="trackRow" style="margin-bottom:10px"></div>
+        <div class="sl-row" style="margin-bottom:10px">
+          <button class="hbtn hot" id="patBtn" disabled>▶ Pattern</button>
+          <button class="hbtn" id="patStopBtn" disabled>■ Stop</button>
+          <button class="hbtn primary" id="bounceBtn" disabled>Bounce → clip</button>
+          <span class="status" id="slStatus"></span>
+        </div>
         <div class="sl-row">
           <div class="sl"><label>Grid</label>
             <select id="sGrid">
@@ -312,6 +358,8 @@
         </div>
 
         <div class="gen">
+          <div class="label" id="genToggle" style="cursor:pointer;user-select:none">▸ Generators — pattern starters &amp; roll</div>
+          <div id="genBody" style="display:none">
           <div class="label">Pattern starters — genre skeletons cast onto your slices</div>
           <div class="presets">
             <button class="chip" data-c="red" data-pp="trap">Trap</button>
@@ -345,10 +393,7 @@
                 <button class="mini" id="rollBtn">Roll</button>
                 <button class="mini" id="diceBtn" title="New seed + roll">🎲</button>
               </div></div>
-            <button class="hbtn hot" id="patBtn" disabled>▶ Pattern</button>
-            <button class="hbtn" id="patStopBtn" disabled>■ Stop</button>
-            <button class="hbtn primary" id="bounceBtn" disabled>Bounce → clip</button>
-            <span class="status" id="slStatus"></span>
+          </div>
           </div>
         </div>
       </div>
@@ -366,7 +411,7 @@
             <input type="range" id="fPan" min="-1" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Reverb <output id="oVerb">0%</output></label>
             <input type="range" id="fVerb" min="0" max="1" step="0.01" value="0"></div>
-          <div class="sl"><label>Crunch <output id="oCrunch">0%</output></label>
+          <div class="sl"><label>Mix <output id="oCrunch">0%</output></label>
             <input type="range" id="fCrunch" min="0" max="1" step="0.01" value="0"></div>
           <div class="sl"><label>Filter freq <output id="oFreq">off</output></label>
             <input type="range" id="fFreq" min="0" max="1" step="0.01" value="1"></div>
@@ -379,9 +424,54 @@
           <div class="sl"><label>Volume <output id="oGain">100%</output></label>
             <input type="range" id="fGain" min="0" max="2" step="0.01" value="1"></div>
         </div>
-        <div class="label" style="margin-top:14px">Chain <span>drag ≡ to reorder · ⏻ bypass · → serial feeds next · ⤂ parallel returns at end</span></div>
+        <div class="label" style="margin-top:14px">FX <span>two slots, serial · SLOT1 → SLOT2 · ⇅ swaps · stack a neighbor for more (soon)</span></div>
         <div id="chainRows"></div>
-        <div id="cardParts" style="display:none"></div>
+        <div id="cardParts" style="display:none">
+          <div id="boumBody">
+            <div class="sliders">
+              <div class="sl"><label>Mode</label>
+                <select id="bMode">
+                  <option value="0" selected>WARM</option><option value="1">CRSH</option>
+                  <option value="2">FUZZ</option><option value="3">BIT·</option>
+                </select></div>
+              <div class="sl"><label>Drive <output id="oBDriv">35%</output></label><input type="range" id="bDriv" min="0" max="1" step="0.01" value="0.35" title="Double-click to reset"></div>
+              <div class="sl"><label>Comp <output id="oBComp">30%</output></label><input type="range" id="bComp" min="0" max="1" step="0.01" value="0.3" title="Threshold + ratio macro · double-click resets"></div>
+              <div class="sl"><label>Speed <output id="oBSped">30%</output></label><input type="range" id="bSped" min="0" max="1" step="0.01" value="0.3" title="Slow glue → fast pump · double-click resets"></div>
+              <div class="sl"><label>Bias <output id="oBBias">off</output></label><input type="range" id="bBias" min="-1" max="1" step="0.01" value="0" title="Asymmetry → even harmonics · double-click resets"></div>
+              <div class="sl"><label>Tone <output id="oBTone">open</output></label><input type="range" id="bTone" min="0" max="1" step="0.01" value="1" title="Double-click to reset"></div>
+            </div>
+          </div>
+          <div id="fltBody">
+            <div class="sliders">
+              <div class="sl"><label>Reso <output id="oFReso">off</output></label><input type="range" id="fReso" min="0" max="1" step="0.01" value="0" title="Self-oscillates at the top · double-click resets"></div>
+              <div class="sl"><label>Mode LP→BP→HP <output id="oFMode">LP</output></label><input type="range" id="fMode" min="0" max="1" step="0.01" value="0" title="Continuous morph · double-click resets"></div>
+              <div class="sl"><label>Drive <output id="oFDriv">off</output></label><input type="range" id="fDriv" min="0" max="1" step="0.01" value="0" title="Clean → overdrive → fold, pre-filter · double-click resets"></div>
+              <div class="sl"><label>Env <output id="oFEnv">off</output></label><input type="range" id="fEnv" min="-1" max="1" step="0.01" value="0" title="Follower on cutoff: up = wah, down = duck · double-click resets"></div>
+            </div>
+          </div>
+          <div id="vrbBody">
+            <div class="presets" style="margin-bottom:6px">
+              <button class="chip" data-vp="tight">Tight</button>
+              <button class="chip" data-c="blue" data-vp="cath">Cathedral</button>
+              <button class="chip" data-c="green" data-vp="wash">Wash</button>
+              <button class="chip" data-c="amber" data-vp="cloud">Cloud</button>
+              <button class="chip" data-c="red" data-vp="gated">Gated</button>
+              <button class="chip" data-vp="bloom">Bloom</button>
+            </div>
+            <div class="sliders">
+              <div class="sl"><label>Algo</label>
+                <select id="vAlgo">
+                  <option value="0">ROOM</option><option value="1">HALL</option><option value="2" selected>PLAT</option>
+                  <option value="3">CLOD</option><option value="4">GRAN</option><option value="5">SHIM</option><option value="6">NONL</option>
+                </select></div>
+              <div class="sl"><label>Decay <output id="oVDecay">50%</output></label><input type="range" id="vDecay" min="0" max="1" step="0.01" value="0.5" title="Double-click to reset"></div>
+              <div class="sl"><label>Pre / Size <output id="oVPred">15%</output></label><input type="range" id="vPred" min="0" max="1" step="0.01" value="0.15" title="Double-click to reset"></div>
+              <div class="sl"><label>Tone <output id="oVTone">60%</output></label><input type="range" id="vTone" min="0" max="1" step="0.01" value="0.6" title="Double-click to reset"></div>
+              <div class="sl"><label>Mod / Spray <output id="oVMod">30%</output></label><input type="range" id="vMod" min="0" max="1" step="0.01" value="0.3" title="Double-click to reset"></div>
+              <div class="sl"><label>Shimmer <output id="oVShim">off</output></label><input type="range" id="vShim" min="0" max="1" step="0.01" value="0" title="Double-click to reset"></div>
+            </div>
+          </div>
+        </div>
         <div class="fxcard" id="dlyCard" style="display:none">
           <div class="fxcard-h" id="dlyHead">
             <span class="fxcard-t">▾ DELAY</span>
@@ -545,13 +635,399 @@ class CBDelay extends AudioWorkletProcessor{
     return true;
   }
 }
-registerProcessor('cb-delay', CBDelay);`;
+registerProcessor('cb-delay', CBDelay);
+// 4-op mono FM voice. envA = carrier amplitude, envB = modulator index. Gate via trig edge, choke = fast kill.
+// ops: 0=C carrier · 1=A mod · 2=B1 · 3=B2 (B pair shares ratio+env; DTUN detunes B2)
+// each algorithm has X and Y output buses; MIX crossfades them (Digitone-inspired)
+const FM_ALGS=[
+ {m:[[1],[2],[3],[]], x:[0], y:[1]},
+ {m:[[1,2],[],[3],[]], x:[0], y:[2]},
+ {m:[[1],[],[3],[]], x:[0], y:[2]},
+ {m:[[1],[2,3],[],[]], x:[0], y:[1]},
+ {m:[[3],[3],[3],[]], x:[0], y:[1,2]},
+ {m:[[1],[],[],[]], x:[0], y:[2,3]},
+ {m:[[],[],[],[]], x:[0,1], y:[2,3]},
+ {m:[[1],[3],[],[]], x:[0], y:[1]}
+];
+class FMVoice extends AudioWorkletProcessor{
+  static get parameterDescriptors(){return[
+    {name:'freq',defaultValue:130.81,minValue:8,maxValue:8000,automationRate:'a-rate'},
+    {name:'trig',defaultValue:0,minValue:0,maxValue:1,automationRate:'a-rate'},
+    {name:'vel',defaultValue:1,minValue:0,maxValue:1,automationRate:'a-rate'},
+    {name:'choke',defaultValue:0,minValue:0,maxValue:1,automationRate:'a-rate'},
+    {name:'algo',defaultValue:0,minValue:0,maxValue:7},
+    {name:'rc',defaultValue:1,minValue:0.25,maxValue:16},
+    {name:'ra',defaultValue:2,minValue:0.25,maxValue:16},
+    {name:'rb',defaultValue:1,minValue:0.25,maxValue:16},
+    {name:'harm',defaultValue:0,minValue:-1,maxValue:1},
+    {name:'dtun',defaultValue:0,minValue:-48,maxValue:48},
+    {name:'fb',defaultValue:0.2,minValue:0,maxValue:1},
+    {name:'mix',defaultValue:0,minValue:0,maxValue:1},
+    {name:'aAtk',defaultValue:0.001,minValue:0.001,maxValue:2},{name:'aDec',defaultValue:0.12,minValue:0.02,maxValue:4},
+    {name:'aEnd',defaultValue:0,minValue:0,maxValue:1},{name:'aLev',defaultValue:0.5,minValue:0,maxValue:1},
+    {name:'bAtk',defaultValue:0.001,minValue:0.001,maxValue:2},{name:'bDec',defaultValue:0.12,minValue:0.02,maxValue:4},
+    {name:'bEnd',defaultValue:0,minValue:0,maxValue:1},{name:'bLev',defaultValue:0,minValue:0,maxValue:1},
+    {name:'ampA',defaultValue:0.004,minValue:0.001,maxValue:2},{name:'ampD',defaultValue:0.35,minValue:0.02,maxValue:4},
+    {name:'penv',defaultValue:0,minValue:0,maxValue:48},{name:'pdec',defaultValue:0.05,minValue:0.005,maxValue:1},
+    {name:'nois',defaultValue:0,minValue:0,maxValue:1},{name:'ndec',defaultValue:0.08,minValue:0.005,maxValue:2}
+  ];}
+  constructor(){super();
+    this.dead=false;
+    this.port.onmessage=(e)=>{ if(e.data==='k') this.dead=true; };
+    this.ph=[0,0,0,0]; this.envAmp=0; this.envA=0; this.envB=0;
+    this.stAmp=0; this.stA=0; this.stB=0;
+    this.lastTrig=0; this.fb4=0; this.choking=false;
+    this.envP=0; this.envN=0; this.rs=0x9e3779b9;
+  }
+  process(inputs,outputs,pm){
+    if(this.dead) return false;
+    const out=outputs[0], L=out[0], R=out[1]||out[0];
+    const n=L.length;
+    const alg=FM_ALGS[Math.min(7,Math.max(0,Math.round(pm.algo[0])))];
+    const rat=[pm.rc[0],pm.ra[0],pm.rb[0],pm.rb[0]*Math.pow(2,pm.dtun[0]/1200)];
+    const harm=pm.harm[0], fb=pm.fb[0], mix=pm.mix[0];
+    const gX=Math.cos(mix*1.5708), gY=Math.sin(mix*1.5708);
+    const aA=Math.max(1,pm.aAtk[0]*sampleRate), dA=Math.exp(-1/(pm.aDec[0]*sampleRate)), eA=pm.aEnd[0], lA=pm.aLev[0];
+    const aB=Math.max(1,pm.bAtk[0]*sampleRate), dB=Math.exp(-1/(pm.bDec[0]*sampleRate)), eB=pm.bEnd[0], lB=pm.bLev[0];
+    const aAmp=Math.max(1,pm.ampA[0]*sampleRate), dAmp=Math.exp(-1/(pm.ampD[0]*sampleRate));
+    const penv=pm.penv[0], dP=Math.exp(-1/(pm.pdec[0]*sampleRate));
+    const nz=pm.nois[0], dN=Math.exp(-1/(pm.ndec[0]*sampleRate));
+    const TAU=6.283185307, IDX=7;
+    const hp=Math.max(0,harm), hn=Math.max(0,-harm);
+    const hNorm=1/(1+hp*0.55+hn*0.4);
+    const v=[0,0,0,0];
+    for(let i=0;i<n;i++){
+      const trig=pm.trig.length>1?pm.trig[i]:pm.trig[0];
+      const choke=pm.choke.length>1?pm.choke[i]:pm.choke[0];
+      const freq=pm.freq.length>1?pm.freq[i]:pm.freq[0];
+      const vel=pm.vel.length>1?pm.vel[i]:pm.vel[0];
+      if(trig>0.5&&this.lastTrig<=0.5){ this.stAmp=1; this.stA=1; this.stB=1; this.choking=false; this.envP=1; this.envN=1; }
+      this.lastTrig=trig;
+      if(choke>0.5) this.choking=true;
+      if(this.choking){ this.envAmp*=0.9975; this.envA*=0.9975; this.envB*=0.9975; this.envN*=0.9975; }
+      else{
+        if(this.stAmp===1){ this.envAmp+=1/aAmp; if(this.envAmp>=1){this.envAmp=1;this.stAmp=2;} }
+        else if(this.stAmp===2) this.envAmp*=dAmp;
+        if(this.stA===1){ this.envA+=1/aA; if(this.envA>=1){this.envA=1;this.stA=2;} }
+        else if(this.stA===2) this.envA=eA+(this.envA-eA)*dA; // decays toward END, holds
+        if(this.stB===1){ this.envB+=1/aB; if(this.envB>=1){this.envB=1;this.stB=2;} }
+        else if(this.stB===2) this.envB=eB+(this.envB-eB)*dB;
+      }
+      this.envP*=dP; this.envN*=dN;
+      const pMul = penv>0.01 ? Math.pow(2,(penv*this.envP)/12) : 1;
+      const mLev=[1, this.envA*lA, this.envB*lB, this.envB*lB];
+      for(let j=3;j>=0;j--){
+        let mod=0;
+        for(const mi of alg.m[j]) mod+=v[mi]*mLev[mi]*IDX;
+        if(j===3) mod+=this.fb4*fb*2.5;
+        let raw;
+        const p=this.ph[j]+mod;
+        if(j===0&&(hp>0.002||hn>0.002)){
+          raw=(Math.sin(p)+hp*(0.5*Math.sin(2*p)+0.28*Math.sin(3*p)+0.18*Math.sin(4*p))+hn*(0.45*Math.sin(3*p)+0.22*Math.sin(5*p)))*hNorm;
+        } else raw=Math.sin(p);
+        if(j===3) this.fb4=raw;
+        v[j]=raw;
+        this.ph[j]+=TAU*freq*pMul*rat[j]/sampleRate;
+        if(this.ph[j]>TAU*64) this.ph[j]-=TAU*64;
+      }
+      let xs=0, ys=0;
+      for(const j of alg.x) xs+=v[j]*(j===0?1:mLev[j]);
+      for(const j of alg.y) ys+=v[j]*(j===0?1:mLev[j]);
+      let nzs=0;
+      if(nz>0.005){ this.rs^=this.rs<<13; this.rs^=this.rs>>>17; this.rs^=this.rs<<5; nzs=((this.rs>>>0)/2147483648-1)*nz*this.envN*0.8; }
+      const y=((gX*xs+gY*ys)+nzs)*this.envAmp*vel*0.42;
+      L[i]=y; R[i]=y;
+    }
+    return true;
+  }
+}
+registerProcessor('fm-voice', FMVoice);
+// BigSky-inspired multi-algo reverb: one tank engine + config table, one granular engine, shared knobs.
+const VRB_CFG=[ // ROOM HALL PLAT CLOD GRAN SHIM NONL
+ {sz:0.35,df:0.62,dampB:0.15,modB:0.3,early:0.5},
+ {sz:1.05,df:0.70,dampB:0.35,modB:0.4,early:0.15},
+ {sz:0.65,df:0.75,dampB:0.0,modB:0.5,early:0.0},
+ {sz:1.35,df:0.72,dampB:0.45,modB:1.6,early:0.0},
+ null, // GRAN handled separately
+ {sz:0.8,df:0.72,dampB:0.1,modB:0.5,early:0.0},
+ {sz:0.5,df:0.68,dampB:0.1,modB:0.3,early:0.3}
+];
+class BSVerb extends AudioWorkletProcessor{
+  static get parameterDescriptors(){return[
+    {name:'algo',defaultValue:2,minValue:0,maxValue:6},
+    {name:'decay',defaultValue:0.5,minValue:0,maxValue:1},
+    {name:'pred',defaultValue:0.15,minValue:0,maxValue:1},
+    {name:'tone',defaultValue:0.6,minValue:0,maxValue:1},
+    {name:'mod',defaultValue:0.3,minValue:0,maxValue:1},
+    {name:'shim',defaultValue:0,minValue:0,maxValue:1},
+    {name:'freeze',defaultValue:0,minValue:0,maxValue:1}
+  ];}
+  constructor(){super();
+    this.dead=false;
+    this.port.onmessage=(e)=>{ if(e.data==='k') this.dead=true; };
+    const S=sampleRate, mk=n=>new Float32Array(n);
+    this.pre=mk(Math.ceil(S*0.26)); this.pw=0;
+    const L=x=>Math.ceil(x*S/29761); // Dattorro lengths scaled to sr
+    this.apLen=[L(142),L(107),L(379),L(277)]; this.ap=this.apLen.map(n=>mk(n*2)); this.api=[0,0,0,0];
+    this.tA=[mk(L(672)*2),mk(L(4453)*2),mk(L(1800)*2),mk(L(3720)*2)];
+    this.tB=[mk(L(908)*2),mk(L(4217)*2),mk(L(2656)*2),mk(L(3163)*2)];
+    this.tAL=[L(672),L(4453),L(1800),L(3720)]; this.tBL=[L(908),L(4217),L(2656),L(3163)];
+    this.ti=[0,0,0,0,0,0,0,0];
+    this.lpA=0; this.lpB=0; this.fbA=0; this.fbB=0;
+    this.mph=0; this.env=0; this.gate=1;
+    this.shA=0; this.shN=Math.ceil(S*0.09);
+    // granular
+    this.gb=mk(Math.ceil(S*2)); this.gw=0; this.gLP=[0,0];
+    this.gr=Array.from({length:8},()=>({on:false,pos:0,ph:0,len:1000,rate:1,pan:0.5}));
+    this.gClock=0; this.rs=0x2545F491;
+  }
+  rnd(){ this.rs^=this.rs<<13; this.rs^=this.rs>>>17; this.rs^=this.rs<<5; return (this.rs>>>0)/4294967296; }
+  rdAp(buf,len,i,x,g){ const r=buf[i]; const w=x+r*g; buf[i]=w; return r-w*g; }
+  rdT(buf,len,i,off){ let j=i-off; while(j<0)j+=len; return buf[j%len]; }
+  process(inputs,outputs,pm){
+    if(this.dead) return false;
+    const inp=inputs[0], out=outputs[0];
+    const L=out[0], R=out[1]||out[0];
+    const iL=(inp&&inp[0])?inp[0]:null, iR=(inp&&inp[1])?inp[1]:iL;
+    const n=L.length, S=sampleRate;
+    const algo=Math.min(6,Math.max(0,Math.round(pm.algo[0])));
+    const decay=pm.decay[0], pred=pm.pred[0], tone=pm.tone[0], mod=pm.mod[0], shim=pm.shim[0];
+    const frz=pm.freeze[0]>0.5;
+    const preN=Math.max(1,Math.floor(pred*0.25*S));
+    if(algo===4){ // GRAN
+      const gbN=this.gb.length;
+      const gLen=Math.max(600,Math.floor((0.03+pred*0.37)*S));
+      const spray=Math.floor(mod*0.9*gbN*0.45);
+      const regen=frz?0:decay*0.55;
+      const a=0.15+tone*0.8, hop=Math.floor(gLen/3);
+      for(let i=0;i<n;i++){
+        const x=((iL?iL[i]:0)+(iR?iR[i]:0))*0.5;
+        let g=0;
+        for(const gr of this.gr){
+          if(!gr.on) continue;
+          const w=Math.sin(3.14159*gr.ph/gr.len); 
+          const idx=Math.floor(gr.pos+gr.ph*gr.rate)%gbN;
+          g+=this.gb[(idx+gbN)%gbN]*w*w*0.55;
+          gr.ph++;
+          if(gr.ph>=gr.len/Math.max(0.01,gr.rate)) gr.on=false;
+        }
+        if(--this.gClock<=0){
+          this.gClock=hop;
+          const gr=this.gr.find(z=>!z.on);
+          if(gr){ gr.on=true; gr.ph=0; gr.len=gLen;
+            gr.rate=(shim>0.01&&this.rnd()<shim)?2:1;
+            gr.pos=((this.gw-1-Math.floor(this.rnd()*spray))%gbN+gbN)%gbN;
+          }
+        }
+        if(!frz){ this.gb[this.gw]=x+g*regen; this.gw=(this.gw+1)%gbN; }
+        this.gLP[0]+=a*(g-this.gLP[0]);
+        const y=this.gLP[0];
+        L[i]=y; R[i]=y;
+      }
+      return true;
+    }
+    const C=VRB_CFG[algo];
+    const szA=this.tAL.map(x=>Math.max(4,Math.floor(x*C.sz)));
+    const szB=this.tBL.map(x=>Math.max(4,Math.floor(x*C.sz)));
+    const fb=frz?1.0:(0.25+decay*0.72);
+    const dampA=0.04+ (1-tone)*0.5 + C.dampB*0.3;
+    const modDepth=mod*C.modB*22;
+    const df=C.df;
+    const shMix=shim*0.7;
+    for(let i=0;i<n;i++){
+      let x=((iL?iL[i]:0)+(iR?iR[i]:0))*0.5;
+      // NONL gate follower
+      const ax=Math.abs(x);
+      this.env += (ax>this.env?0.02:0.0008)*(ax-this.env);
+      if(algo===6){ const target=this.env>0.008?1:0; this.gate+=(target>this.gate?0.02:0.004)*(target-this.gate); }
+      else this.gate=1;
+      if(frz) x=0;
+      this.pre[this.pw]=x; this.pw=(this.pw+1)%this.pre.length;
+      let d=this.pre[((this.pw-preN)%this.pre.length+this.pre.length)%this.pre.length];
+      // input diffusion
+      for(let k=0;k<4;k++){
+        const len=Math.max(2,Math.floor(this.apLen[k]*C.sz));
+        d=this.rdAp(this.ap[k],len,this.api[k]=(this.api[k]+1)%len,d,df*0.9);
+      }
+      this.mph+=6.283/ (S*0.71); if(this.mph>6.283)this.mph-=6.283;
+      const m1=Math.floor(Math.sin(this.mph)*modDepth), m2=Math.floor(Math.sin(this.mph*1.31+2.1)*modDepth);
+      // branch A (fed by d + fbB)
+      let a1=d+this.fbB*fb;
+      a1=this.rdAp(this.tA[0],szA[0],this.ti[0]=(this.ti[0]+1)%szA[0],a1,-df);
+      this.tA[1][this.ti[1]=(this.ti[1]+1)%szA[1]]=a1;
+      let a2=this.rdT(this.tA[1],szA[1],this.ti[1],Math.max(1,szA[1]-1-Math.abs(m1)));
+      this.lpA+=(0.95-dampA)*(a2-this.lpA); a2=this.lpA;
+      a2=this.rdAp(this.tA[2],szA[2],this.ti[2]=(this.ti[2]+1)%szA[2],a2,df*0.6);
+      this.tA[3][this.ti[3]=(this.ti[3]+1)%szA[3]]=a2;
+      this.fbA=this.rdT(this.tA[3],szA[3],this.ti[3],1);
+      // branch B (fed by d + fbA, possibly shimmered)
+      let fbIn=this.fbA;
+      if(shMix>0.005){
+        // crude +12 in feedback: read tank tap at half-step stride via dual phase
+        this.shA=(this.shA+2)%this.shN;
+        const p1=this.shA/this.shN, p2=(p1+0.5)%1;
+        const t1=this.rdT(this.tA[3],szA[3],this.ti[3],1+Math.floor(p1*this.shN*0.5));
+        const t2=this.rdT(this.tA[3],szA[3],this.ti[3],1+Math.floor(p2*this.shN*0.5));
+        const w1=Math.sin(3.14159*p1), w2=Math.sin(3.14159*p2);
+        fbIn=fbIn*(1-shMix)+(t1*w1*w1+t2*w2*w2)*shMix;
+      }
+      let b1=d+fbIn*fb;
+      b1=this.rdAp(this.tB[0],szB[0],this.ti[4]=(this.ti[4]+1)%szB[0],b1,-df);
+      this.tB[1][this.ti[5]=(this.ti[5]+1)%szB[1]]=b1;
+      let b2=this.rdT(this.tB[1],szB[1],this.ti[5],Math.max(1,szB[1]-1-Math.abs(m2)));
+      this.lpB+=(0.95-dampA)*(b2-this.lpB); b2=this.lpB;
+      b2=this.rdAp(this.tB[2],szB[2],this.ti[6]=(this.ti[6]+1)%szB[2],b2,df*0.6);
+      this.tB[3][this.ti[7]=(this.ti[7]+1)%szB[3]]=b2;
+      this.fbB=this.rdT(this.tB[3],szB[3],this.ti[7],1);
+      // clip guard in loop (normalized — the v0.12.1 rule)
+      this.fbA=Math.tanh(this.fbA*1.2)/1.2; this.fbB=Math.tanh(this.fbB*1.2)/1.2;
+      // output taps
+      let yl=this.rdT(this.tA[1],szA[1],this.ti[1],Math.floor(szA[1]*0.33))+this.rdT(this.tB[3],szB[3],this.ti[7],Math.floor(szB[3]*0.41));
+      let yr=this.rdT(this.tB[1],szB[1],this.ti[5],Math.floor(szB[1]*0.29))+this.rdT(this.tA[3],szA[3],this.ti[3],Math.floor(szA[3]*0.47));
+      if(C.early>0.01){ yl=yl*(1-C.early*0.4)+d*C.early; yr=yr*(1-C.early*0.4)+d*C.early; }
+      const g=this.gate;
+      L[i]=yl*0.6*g; R[i]=yr*0.6*g;
+    }
+    return true;
+  }
+}
+registerProcessor('bs-verb', BSVerb);
+// Blades(MI)-inspired single-channel SVF: TPT topology, saturated integrators (normalized tanh),
+// continuous LP->BP->HP morph, pre-filter drive (clean->OD->fold), bipolar envelope follower on cutoff.
+class MLFilt extends AudioWorkletProcessor{
+  static get parameterDescriptors(){return[
+    {name:'freq',defaultValue:14000,minValue:20,maxValue:16000,automationRate:'a-rate'},
+    {name:'reso',defaultValue:0,minValue:0,maxValue:1},
+    {name:'mode',defaultValue:0,minValue:0,maxValue:1},
+    {name:'driv',defaultValue:0,minValue:0,maxValue:1},
+    {name:'env',defaultValue:0,minValue:-1,maxValue:1}
+  ];}
+  constructor(){super();
+    this.dead=false;
+    this.port.onmessage=(e)=>{ if(e.data==='k') this.dead=true; };
+    this.ic1=[0,0]; this.ic2=[0,0]; this.fl=0;
+  }
+  process(inputs,outputs,pm){
+    if(this.dead) return false;
+    const inp=inputs[0], out=outputs[0];
+    const L=out[0], R=out[1]||out[0];
+    const iL=(inp&&inp[0])?inp[0]:null, iR=(inp&&inp[1])?inp[1]:iL;
+    const n=L.length, S=sampleRate;
+    const reso=pm.reso[0], mode=pm.mode[0], driv=pm.driv[0], envAmt=pm.env[0];
+    const k=Math.max(-0.04, 2-2*Math.min(1.02,reso*1.02)); // reso->1: k crosses 0 = self-osc
+    const dGain=1+driv*6, foldMix=Math.max(0,(driv-0.5)*2), dNorm=1/(1+driv*1.2);
+    const sat=1.15;
+    const resoComp=1/(1+(2-k)*0.22);
+    for(let i=0;i<n;i++){
+      const fq=Math.min(16000,Math.max(20,pm.freq.length>1?pm.freq[i]:pm.freq[0]));
+      let xm=(((iL?iL[i]:0)+(iR?iR[i]:0))*0.5);
+      // follower (on pre-drive input)
+      const ax=Math.abs(xm);
+      this.fl += (ax>this.fl?0.004:0.0006)*(ax-this.fl);
+      const fEff=Math.min(16000,Math.max(20, fq*Math.pow(2, envAmt*this.fl*7)));
+      const g=Math.tan(3.14159265*fEff/S);
+      const a1=1/(1+g*(g+k)), a2=g*a1;
+      for(let ch=0;ch<2;ch++){
+        let x=ch===0?(iL?iL[i]:0):(iR?iR[i]:(iL?iL[i]:0));
+        // pre-filter drive: tanh -> fold blend
+        if(driv>0.005){
+          const pre=x*dGain;
+          const soft=Math.tanh(pre);
+          x=(foldMix>0.001 ? soft*(1-foldMix)+Math.sin(pre*1.6)*foldMix : soft)*dNorm;
+        }
+        const v3=x-this.ic2[ch];
+        const v1=a1*this.ic1[ch]+a2*v3;
+        const v2=this.ic2[ch]+g*v1;
+        this.ic1[ch]=Math.tanh((2*v1-this.ic1[ch])*sat)/sat;
+        this.ic2[ch]=Math.tanh((2*v2-this.ic2[ch])*sat)/sat;
+        const lp=v2, bp=v1, hp=x-k*v1-v2;
+        let y;
+        if(mode<0.5){ const t=mode*2; y=lp*(1-t)+bp*t*(1.2+(2-k)*0.3); }
+        else { const t=(mode-0.5)*2; y=bp*(1-t)*(1.2+(2-k)*0.3)+hp*t; }
+        y*=resoComp;
+        if(ch===0) L[i]=y; else R[i]=y;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('ml-filt', MLFilt);
+// OTO-inspired thickener: drive -> feed-forward compressor (linked detector) -> shaper -> tone -> auto-makeup.
+class OTBoum extends AudioWorkletProcessor{
+  static get parameterDescriptors(){return[
+    {name:'driv',defaultValue:0.35,minValue:0,maxValue:1},
+    {name:'comp',defaultValue:0.3,minValue:0,maxValue:1},
+    {name:'sped',defaultValue:0.3,minValue:0,maxValue:1},
+    {name:'mode',defaultValue:0,minValue:0,maxValue:3},
+    {name:'bias',defaultValue:0,minValue:-1,maxValue:1},
+    {name:'tone',defaultValue:1,minValue:0,maxValue:1}
+  ];}
+  constructor(){super();
+    this.dead=false;
+    this.port.onmessage=(e)=>{ if(e.data==='k') this.dead=true; };
+    this.env=0; this.lp=[0,0]; this.hold=[0,0]; this.hc=0;
+  }
+  shape(x,mode,driv,dk){
+    if(mode===0) return Math.tanh(x*dk)/dk;
+    if(mode===1) return Math.sin(x*(1+driv*4)*1.2)*0.8;
+    if(mode===2){ const h=x*(1+driv*6); return Math.tanh(Math.max(-0.85,Math.min(0.85,h))*2)/2; }
+    return x; // BIT handled by decimator
+  }
+  process(inputs,outputs,pm){
+    if(this.dead) return false;
+    const inp=inputs[0], out=outputs[0];
+    const L=out[0], R=out[1]||out[0];
+    const iL=(inp&&inp[0])?inp[0]:null, iR=(inp&&inp[1])?inp[1]:iL;
+    const n=L.length, S=sampleRate;
+    const driv=pm.driv[0], comp=pm.comp[0], sped=pm.sped[0], bias=pm.bias[0]*0.35, tone=pm.tone[0];
+    const mode=Math.min(3,Math.max(0,Math.round(pm.mode[0])));
+    const dGain=1+driv*5;
+    const dk=1+driv*3;
+    const atk=1-Math.exp(-1/((0.025-sped*0.024)*S));
+    const rel=1-Math.exp(-1/((0.4-sped*0.34)*S));
+    const thr=Math.pow(10, -comp*24/20);
+    const ratio=1+comp*7;
+    const rexp=-(1-1/ratio);
+    const holdN=1+Math.floor(driv*24);
+    const q=Math.pow(2, 8-driv*5.2);
+    const a=0.1+tone*0.85;
+    const dcOff=this.shape(bias,mode===3?0:mode,driv,dk);
+    const mk=(1+driv*0.8)*(1+comp*0.85);
+    for(let i=0;i<n;i++){
+      const xl=(iL?iL[i]:0)*dGain, xr=(iR?iR[i]:(iL?iL[i]:0))*dGain;
+      // linked detector
+      const det=Math.max(Math.abs(xl),Math.abs(xr));
+      this.env += (det>this.env?atk:rel)*(det-this.env);
+      let gr=1;
+      if(comp>0.005 && this.env>thr) gr=Math.pow(this.env/thr, rexp);
+      let yl, yr;
+      if(mode===3){ // BIT: decimate + quantize (post-comp)
+        if(++this.hc>=holdN){ this.hc=0; this.hold[0]=xl*gr; this.hold[1]=xr*gr; }
+        yl=Math.round(this.hold[0]*q)/q; yr=Math.round(this.hold[1]*q)/q;
+      } else {
+        yl=this.shape(xl*gr+bias,mode,driv,dk)-dcOff;
+        yr=this.shape(xr*gr+bias,mode,driv,dk)-dcOff;
+      }
+      if(tone<0.98){ this.lp[0]+=a*(yl-this.lp[0]); yl=this.lp[0]; this.lp[1]+=a*(yr-this.lp[1]); yr=this.lp[1]; }
+      yl*=mk; yr*=mk;
+      L[i]=Math.tanh(yl*1.05)/1.05; R[i]=Math.tanh(yr*1.05)/1.05;
+    }
+    return true;
+  }
+}
+registerProcessor('ot-boum', OTBoum);`;
   const workletURL = URL.createObjectURL(new Blob([CB_DELAY_SRC], {type:'application/javascript'}));
   const workletMap = new WeakMap();
   function ensureWorklet(c){
     if (!workletMap.has(c)) workletMap.set(c, c.audioWorklet.addModule(workletURL));
     return workletMap.get(c);
   }
+  const mkBoum = () => ({driv:0.35, comp:0.3, sped:0.3, mode:0, bias:0, tone:1});
+  const normalizeBoum = p => p.boum ? p.boum : Object.assign(mkBoum(), {driv: Math.min(1, (p.crunch||0)*1.2) || 0.35});
+  const mkFlt = () => ({reso:0, mode:0, driv:0, env:0});
+  const normalizeFlt = p => p.flt ? p.flt : Object.assign(mkFlt(), {mode: p.type==='highpass'?1 : p.type==='bandpass'?0.5 : 0});
+  const mkVrb = () => ({algo:2, decay:0.5, pred:0.15, tone:0.6, mod:0.3, shim:0, freeze:false});
+  const VRB_NAMES = ['ROOM','HALL','PLAT','CLOD','GRAN','SHIM','NONL'];
   const mkDly = () => ({mix:0, time:0.34, sync:'free', feedback:0.35, tone:0.5, pitch:0, drive:0.3, mod:0, modRate:0.8, pingpong:false, freeze:false});
   const dlyBeats = {'1/16':0.25,'1/8':0.5,'1/8d':0.75,'1/4':1,'1/2':2};
   const dlyTimeSec = d => d.sync==='free' ? d.time : Math.min(3.8, dlyBeats[d.sync]*(60/sset.bpm));
@@ -573,6 +1049,20 @@ registerProcessor('cb-delay', CBDelay);`;
       return out;
     }
     return mkChain();
+  };
+  // two-slot model (Octatrack-style): legacy chains migrate as "first two active modules in old order"
+  const normalizeSlots = p => {
+    if (Array.isArray(p.slots) && p.slots.length === 2 && p.slots.every(s => s && typeof s.fxt === 'string')) return p.slots;
+    const order = normalizeChain(p);
+    const d = normalizeDly(p);
+    const activeOf = id =>
+      id === 'crunch' ? (p.crunch > 0.01) :
+      id === 'filter' ? (p.freq < 0.995 || (p.filterMix != null && p.filterMix < 0.995)) :
+      id === 'delay' ? (d.mix > 0.005 || d.freeze) : (p.verb > 0.01);
+    const picked = order.filter(cd => cd.on !== false && activeOf(cd.id)).slice(0, 2)
+      .map(cd => ({fxt: cd.id === 'reverb' ? 'verb' : cd.id}));
+    while (picked.length < 2) picked.push({fxt:'none'});
+    return picked;
   };
   const MIX_SR = 48000;
   let source = 'desktop';
@@ -635,7 +1125,7 @@ registerProcessor('cb-delay', CBDelay);`;
 
   const $ = id => document.getElementById(id);
   const mkLfos = () => Array.from({length:4}, () => ({rate:1, depth:0, shape:'sine', sync:'free', dest:'off'}));
-  let fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, filterMix:1, lfos: mkLfos(), dly: mkDly(), chain: mkChain() };
+  let fx = { rate:1, pitch:0, verb:0, crunch:0, freq:1, type:'lowpass', gain:1, fadeIn:0, fadeOut:0, pan:0, filterMix:1, lfos: mkLfos(), dly: mkDly(), vrb: mkVrb(), flt: mkFlt(), boum: mkBoum(), chain: mkChain(), slots:[{fxt:'none'},{fxt:'none'}] };
   let tracks = null, activeTrack = 0; // initialized after fxDefaults (v0.9 TDZ lesson)
   const sset = { grid:8, seed:1207, passes:2, chaos:1, shuffle:0.3, reverse:0.15, stutter:0.15, rest:0.1, jitter:0, spread:0, bpm:120, div:0.5, len:8, swing:50 };
   const defaultStep = i => ({ on:true, slice:i%8, retrig:1, cond:'100', rev:false, gate:'cut', pitch:0, pan:0, locked:false });
@@ -746,7 +1236,7 @@ registerProcessor('cb-delay', CBDelay);`;
     tracks[activeTrack].len = sset.len;
     s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, monLevel, mset:{...mset}, sset:{...sset},
       pattern:pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined})),
-      tracks: tracks.map(t=>({clipId:t.clipId, len:t.len, gain:t.gain, mute:t.mute, pattern:t.pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined}))}))
+      tracks: tracks.map(t=>({clipId:t.clipId, synth:{...t.synth}, len:t.len, gain:t.gain, mute:t.mute, pattern:t.pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined}))}))
     }, 'state');
   }).catch(()=>{});
   const getAll = store => new Promise((res) => {
@@ -804,18 +1294,27 @@ registerProcessor('cb-delay', CBDelay);`;
         if (state.sset) Object.assign(sset, state.sset);
         if (Array.isArray(state.pattern)) pattern = pattern.map((p,i)=> state.pattern[i] ? {...defaultStep(i), ...state.pattern[i]} : p);
         if (Array.isArray(state.tracks)){
+          const legacyVoices = Array.isArray(state.voices) ? state.voices : [];
+          const isNewGrid = state.tracks.length === CH_COUNT && !state.tracks.some(t2 => t2 && t2.type);
+          let nextVoiceCh = 4;
           state.tracks.forEach((st2, i) => {
-            if (!tracks[i]) return;
-            tracks[i].clipId = st2.clipId != null ? st2.clipId : null;
-            tracks[i].len = st2.len || 8;
-            tracks[i].gain = st2.gain != null ? st2.gain : 0.85;
-            tracks[i].mute = !!st2.mute;
-            if (Array.isArray(st2.pattern)) tracks[i].pattern = tracks[i].pattern.map((p,j)=> st2.pattern[j] ? {...defaultStep(j), ...st2.pattern[j]} : p);
+            if (!st2) return;
+            const legacyFm = st2.type === 'fm';
+            const dest = isNewGrid ? i : (legacyFm ? (nextVoiceCh <= 7 ? nextVoiceCh++ : -1) : i);
+            if (dest < 0 || !tracks[dest]) return;
+            const t = tracks[dest];
+            t.clipId = (!legacyFm && st2.clipId != null) ? st2.clipId : (dest < 4 && st2.clipId != null ? st2.clipId : null);
+            t.len = st2.len || 8;
+            t.gain = st2.gain != null ? Math.min(1, st2.gain) : 0.7;
+            t.mute = !!st2.mute;
+            if (st2.synth) t.synth = upgradeVoice(st2.synth);
+            else if (legacyFm && typeof st2.voice === 'number' && legacyVoices[st2.voice]) t.synth = upgradeVoice(legacyVoices[st2.voice]);
+            if (Array.isArray(st2.pattern)) t.pattern = t.pattern.map((p,j)=> st2.pattern[j] ? {...defaultStep(j), ...st2.pattern[j]} : p);
           });
           pattern = tracks[0].pattern;
           fx = tracks[0].fx;
           sset.len = tracks[0].len;
-        } else { tracks[0].len = sset.len; } // pre-v0.12 state -> track 1
+        } else { tracks[0].len = sset.len; } // pre-v0.12 state -> channel 1
         $('fCross').value = crossfade; $('oCross').textContent = crossfade.toFixed(1)+'s';
         $('limitBtn').classList.toggle('toggled', limiter);
         $('autoTrimBtn').classList.toggle('toggled', autoTrimOn);
@@ -836,6 +1335,7 @@ registerProcessor('cb-delay', CBDelay);`;
     syncMaster(); rebuildMaster();
     renderFxBank();
     renderTracks();
+    syncFmWell();
     renderClips(); renderTimeline(); renderSteps();
     updateStoreInfo();
   }
@@ -1045,66 +1545,86 @@ registerProcessor('cb-delay', CBDelay);`;
 
     const input = c.createGain();
     const post = c.createGain();               // chain sum: serial main path + parallel returns
-    const chainCfg = normalizeChain(p);
+    const slotsCfg = normalizeSlots(p);
     const dly = normalizeDly(p);
     const fMix = (p.filterMix != null ? p.filterMix : 1);
     let main = input;
-    const returns = [];
-    let crunchWet=null, crunchDry=null, crunchWS=null, crunchMode='serial';
-    let filterNode=null, filterWet=null, filterDry=null, filterMode='serial';
-    let dlyNode=null, dlyWet=null, dlyDry=null, dlyMode='parallel';
-    let verbWet=null, verbDry=null, verbMode='parallel';
-    for (const card of chainCfg){
-      if (!card.on) continue;
-      const tap = main; // parallel cards hear the main path at their position
-      if (card.id === 'crunch' && (p.crunch > 0.01 || targeted.has('crunch'))){
-        crunchMode = card.mode;
-        const ws = c.createWaveShaper();
-        ws.curve = distortionCurve(Math.pow(Math.max(p.crunch, 0.15), 1.8));
-        ws.oversample = '2x';
-        crunchWS = ws;
-        if (card.mode === 'serial'){
-          const sum = c.createGain();
-          crunchDry = c.createGain(); crunchDry.gain.value = Math.cos(p.crunch*Math.PI/2);
-          crunchWet = c.createGain(); crunchWet.gain.value = Math.sin(p.crunch*Math.PI/2);
-          tap.connect(crunchDry); crunchDry.connect(sum);
-          tap.connect(ws); ws.connect(crunchWet); crunchWet.connect(sum);
-          main = sum;
-        } else {
-          crunchWet = c.createGain(); crunchWet.gain.value = p.crunch; // send level
-          tap.connect(ws); ws.connect(crunchWet);
-          returns.push(crunchWet);
+    let crunchWet=null, crunchDry=null, crunchWS=null, crunchMode='serial', boumNode=null;
+    let filterNode=null, filterWet=null, filterDry=null, filterMode='serial', filtWk=null;
+    let dlyNode=null, dlyWet=null, dlyDry=null, dlyMode='serial';
+    let verbWet=null, verbDry=null, verbMode='serial', vrbNode=null;
+    for (const slot of slotsCfg){
+      const tap = main;
+      if (slot.fxt === 'crunch' && (p.crunch > 0.01 || targeted.has('crunch'))){
+        const bm = normalizeBoum(p);
+        let bOut = null;
+        try{
+          await ensureWorklet(c);
+          boumNode = new AudioWorkletNode(c, 'ot-boum', {outputChannelCount:[2]});
+          boumNode.parameters.get('driv').value = bm.driv;
+          boumNode.parameters.get('comp').value = bm.comp;
+          boumNode.parameters.get('sped').value = bm.sped;
+          boumNode.parameters.get('mode').value = bm.mode;
+          boumNode.parameters.get('bias').value = bm.bias;
+          boumNode.parameters.get('tone').value = bm.tone;
+          tap.connect(boumNode);
+          bOut = boumNode;
+        }catch(e){
+          const ws = c.createWaveShaper();
+          ws.curve = distortionCurve(Math.pow(Math.max(p.crunch, 0.15), 1.8));
+          ws.oversample = '2x';
+          crunchWS = ws;
+          tap.connect(ws);
+          bOut = ws;
         }
+        const sum = c.createGain();
+        crunchDry = c.createGain(); crunchDry.gain.value = Math.cos(p.crunch*Math.PI/2);
+        crunchWet = c.createGain(); crunchWet.gain.value = Math.sin(p.crunch*Math.PI/2);
+        tap.connect(crunchDry); crunchDry.connect(sum);
+        bOut.connect(crunchWet); crunchWet.connect(sum);
+        main = sum;
       }
-      else if (card.id === 'filter' && (p.freq < 0.995 || targeted.has('filter') || targeted.has('filtermix'))){
-        filterMode = card.mode;
-        const f = c.createBiquadFilter();
-        f.type = p.type;
+      else if (slot.fxt === 'filter'){
+        const flt = normalizeFlt(p);
+        const fltActive = p.freq < 0.995 || flt.reso > 0.02 || flt.driv > 0.02 || Math.abs(flt.env) > 0.02 || targeted.has('filter') || targeted.has('filtermix') || targeted.has('filtmode');
+        if (!fltActive) continue;
         const effFreq = p.freq < 0.995 ? p.freq : 0.6;
-        f.frequency.value = 80 * Math.pow(14000/80, effFreq);
-        if (p.type === 'bandpass') f.Q.value = 1.2;
-        filterNode = f;
-        if (card.mode === 'serial'){
-          if (fMix >= 0.995 && !targeted.has('filtermix')){
-            tap.connect(f); main = f;
-          } else {
-            const sum = c.createGain();
-            filterDry = c.createGain(); filterDry.gain.value = Math.cos(fMix*Math.PI/2);
-            filterWet = c.createGain(); filterWet.gain.value = Math.sin(fMix*Math.PI/2);
-            tap.connect(filterDry); filterDry.connect(sum);
-            tap.connect(f); f.connect(filterWet); filterWet.connect(sum);
-            main = sum;
-          }
+        const hz = 80 * Math.pow(14000/80, effFreq);
+        let fOut = null;
+        try{
+          await ensureWorklet(c);
+          const w = new AudioWorkletNode(c, 'ml-filt', {outputChannelCount:[2]});
+          w.parameters.get('freq').value = p.freq < 0.995 ? hz : 16000;
+          w.parameters.get('reso').value = flt.reso;
+          w.parameters.get('mode').value = flt.mode;
+          w.parameters.get('driv').value = flt.driv;
+          w.parameters.get('env').value = flt.env;
+          filtWk = w;
+          filterNode = { frequency: w.parameters.get('freq'), modeParam: w.parameters.get('mode') };
+          tap.connect(w);
+          fOut = w;
+        }catch(e){
+          const f = c.createBiquadFilter();
+          f.type = flt.mode > 0.75 ? 'highpass' : flt.mode > 0.25 ? 'bandpass' : 'lowpass';
+          f.frequency.value = hz;
+          filterNode = f;
+          tap.connect(f);
+          fOut = f;
+        }
+        if (fMix >= 0.995 && !targeted.has('filtermix')){
+          main = fOut;
         } else {
-          filterWet = c.createGain(); filterWet.gain.value = fMix;
-          tap.connect(f); f.connect(filterWet);
-          returns.push(filterWet);
+          const sum = c.createGain();
+          filterDry = c.createGain(); filterDry.gain.value = Math.cos(fMix*Math.PI/2);
+          filterWet = c.createGain(); filterWet.gain.value = Math.sin(fMix*Math.PI/2);
+          tap.connect(filterDry); filterDry.connect(sum);
+          fOut.connect(filterWet); filterWet.connect(sum);
+          main = sum;
         }
       }
-      else if (card.id === 'delay'){
+      else if (slot.fxt === 'delay'){
         const dlyTargeted = targeted.has('dlymix') || targeted.has('dlytime') || targeted.has('dlyfb') || targeted.has('dlytone');
         if (!(dly.mix > 0.005 || dly.freeze || dlyTargeted)) continue;
-        dlyMode = card.mode;
         let dOut = null;
         try{
           await ensureWorklet(c);
@@ -1121,45 +1641,49 @@ registerProcessor('cb-delay', CBDelay);`;
           tap.connect(dlyNode);
           dOut = dlyNode;
         }catch(e){
-          const d = c.createDelay(3.9); d.delayTime.value = dlyTimeSec(dly);
+          const d2 = c.createDelay(3.9); d2.delayTime.value = dlyTimeSec(dly);
           const fbG = c.createGain(); fbG.gain.value = Math.min(0.95, dly.feedback);
-          tap.connect(d); d.connect(fbG); fbG.connect(d);
-          dOut = d;
+          tap.connect(d2); d2.connect(fbG); fbG.connect(d2);
+          dOut = d2;
         }
-        if (card.mode === 'serial'){
-          const sum = c.createGain();
-          dlyDry = c.createGain(); dlyDry.gain.value = Math.cos(dly.mix*Math.PI/2);
-          dlyWet = c.createGain(); dlyWet.gain.value = Math.sin(Math.PI/2*dly.mix);
-          tap.connect(dlyDry); dlyDry.connect(sum);
-          dOut.connect(dlyWet); dlyWet.connect(sum);
-          main = sum;
-        } else {
-          dlyWet = c.createGain(); dlyWet.gain.value = dly.mix; // send level
-          dOut.connect(dlyWet);
-          returns.push(dlyWet);
-        }
+        const sum = c.createGain();
+        dlyDry = c.createGain(); dlyDry.gain.value = Math.cos(dly.mix*Math.PI/2);
+        dlyWet = c.createGain(); dlyWet.gain.value = Math.sin(Math.PI/2*dly.mix);
+        tap.connect(dlyDry); dlyDry.connect(sum);
+        dOut.connect(dlyWet); dlyWet.connect(sum);
+        main = sum;
       }
-      else if (card.id === 'reverb' && (p.verb > 0.01 || targeted.has('verb'))){
-        verbMode = card.mode;
-        const cv = c.createConvolver();
-        cv.buffer = (c === ctx && reverbIR) ? reverbIR : makeImpulse(c);
-        if (c === ctx && !reverbIR) reverbIR = cv.buffer;
-        if (card.mode === 'serial'){
-          const sum = c.createGain();
-          verbDry = c.createGain(); verbDry.gain.value = Math.cos(p.verb*Math.PI/2);
-          verbWet = c.createGain(); verbWet.gain.value = Math.sin(Math.PI/2*p.verb)*2.0;
-          tap.connect(verbDry); verbDry.connect(sum);
-          tap.connect(cv); cv.connect(verbWet); verbWet.connect(sum);
-          main = sum;
-        } else {
-          verbWet = c.createGain(); verbWet.gain.value = p.verb*2.0; // gain-compensated send
-          tap.connect(cv); cv.connect(verbWet);
-          returns.push(verbWet);
+      else if (slot.fxt === 'verb' && (p.verb > 0.01 || (p.vrb && p.vrb.freeze) || targeted.has('verb'))){
+        const vrb = normalizeVrb(p);
+        let vOut = null;
+        try{
+          await ensureWorklet(c);
+          vrbNode = new AudioWorkletNode(c, 'bs-verb', {outputChannelCount:[2]});
+          vrbNode.parameters.get('algo').value = vrb.algo;
+          vrbNode.parameters.get('decay').value = vrb.decay;
+          vrbNode.parameters.get('pred').value = vrb.pred;
+          vrbNode.parameters.get('tone').value = vrb.tone;
+          vrbNode.parameters.get('mod').value = vrb.mod;
+          vrbNode.parameters.get('shim').value = vrb.shim;
+          vrbNode.parameters.get('freeze').value = vrb.freeze ? 1 : 0;
+          tap.connect(vrbNode);
+          vOut = vrbNode;
+        }catch(e){
+          const cv = c.createConvolver();
+          cv.buffer = (c === ctx && reverbIR) ? reverbIR : makeImpulse(c);
+          if (c === ctx && !reverbIR) reverbIR = cv.buffer;
+          tap.connect(cv);
+          vOut = cv;
         }
+        const sum = c.createGain();
+        verbDry = c.createGain(); verbDry.gain.value = Math.cos(p.verb*Math.PI/2);
+        verbWet = c.createGain(); verbWet.gain.value = Math.sin(Math.PI/2*p.verb)*1.7;
+        tap.connect(verbDry); verbDry.connect(sum);
+        vOut.connect(verbWet); verbWet.connect(sum);
+        main = sum;
       }
     }
     main.connect(post);
-    for (const r of returns) r.connect(post);
     const panner = c.createStereoPanner();
     const basePan = Math.max(-1, Math.min(1, p.pan || 0));
     panner.pan.value = basePan;
@@ -1195,6 +1719,7 @@ registerProcessor('cb-delay', CBDelay);`;
         case 'pan':      route(panner.pan, Math.min(1, l.depth) * (1 - Math.abs(basePan))); break;
         case 'filter':   if (filterNode) route(filterNode.frequency, filterNode.frequency.value * 0.85 * l.depth); break;
         case 'filtermix': if (filterWet) route(filterWet.gain, l.depth * 0.5); break;
+        case 'filtmode': if (filterNode && filterNode.modeParam) route(filterNode.modeParam, l.depth * 0.5); break;
         case 'volume':   route(out.gain, p.gain * l.depth/2); break;
         case 'speed':    { const g = c.createGain(); g.gain.value = l.depth * 0.5 * p.rate; src.node.connect(g); speedMod = g; (routeGains[i] = routeGains[i] || []).push({p: g.gain, v: g.gain.value}); } break;
         case 'dlymix':  if (dlyWet) route(dlyWet.gain, l.depth * 0.5); break;
@@ -1215,8 +1740,8 @@ registerProcessor('cb-delay', CBDelay);`;
     const lfoRefs = sources.map((s,i) => (s && active[i]) ? {freqParam:s.freqParam, freqScale:s.freqScale, sync:active[i].sync, builtDepth:active[i].depth, gains:routeGains[i]||[]} : null);
     const lfoNodes = sources.filter(Boolean).map(s => s.node);
     const dlyActive = !!dlyWet;
-    const tail = ((p.verb>0.01||targeted.has('verb'))?2.4:0) + (dlyActive ? Math.min(4, 1.2 + dlyTimeSec(dly)*(dly.feedback>0.85?4:2)) : 0);
-    return { input, out, tail, lfos: lfoNodes, lfoRefs, speedMod, dlyNode, dlyWet, dlyDry, dlyMode, filterNode, filterWet, filterDry, filterMode, verbWet, verbDry, verbMode, crunchWet, crunchDry, crunchWS, crunchMode, panner, volHead };
+    const tail = ((p.verb>0.01||targeted.has('verb'))?(1.5+normalizeVrb(p).decay*5):0) + (dlyActive ? Math.min(4, 1.2 + dlyTimeSec(dly)*(dly.feedback>0.85?4:2)) : 0);
+    return { input, out, tail, lfos: lfoNodes, lfoRefs, speedMod, dlyNode, dlyWet, dlyDry, dlyMode, filterNode, filterWet, filterDry, filterMode, filtWk, verbWet, verbDry, verbMode, vrbNode, crunchWet, crunchDry, crunchWS, crunchMode, boumNode, panner, volHead };
   }
   function applyFades(gainParam, t0, coreDur, p){
     const fi = Math.min(p.fadeIn, coreDur/2), fo = Math.min(p.fadeOut, coreDur/2);
@@ -1260,7 +1785,7 @@ registerProcessor('cb-delay', CBDelay);`;
   }
   const snapshotCurrent = () => ({
     uid: uidSeq++, clipId: cur.id, name: cur.name,
-    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l})), dly: {...fx.dly}, chain: fx.chain.map(cd=>({...cd}))}
+    trimA, trimB, reversed, fx: {...fx, lfos: fx.lfos.map(l=>({...l})), dly: {...fx.dly}, vrb: {...fx.vrb}, flt: {...fx.flt}, boum: {...fx.boum}, chain: fx.chain.map(cd=>({...cd})), slots: fx.slots.map(s=>({...s}))}
   });
 
   // ================= recording =================
@@ -1548,7 +2073,7 @@ registerProcessor('cb-delay', CBDelay);`;
   function updateButtons(){
     const on = !!cur;
     for (const id of ['playBtn','stopBtn','loopBtn','trimResetBtn','commitBtn','revBtn','exportBtn','exportBtnS','addTlBtn','patBtn','patStopBtn','bounceBtn','assignBtn']) $(id).disabled = !on;
-    const anyAssigned = tracks && tracks.some(t => trackClip(t));
+    const anyAssigned = tracks && tracks.some(t => t.type === 'fm' || trackClip(t));
     if (anyAssigned){ $('patBtn').disabled = false; $('patStopBtn').disabled = false; $('bounceBtn').disabled = false; }
   }
 
@@ -1729,7 +2254,7 @@ registerProcessor('cb-delay', CBDelay);`;
   bind('fPitch','pitch','oPitch', v=>(v>0?'+':'')+v+' st');
   bind('fVerb','verb','oVerb', v=>Math.round(v*100)+'%', ch => {
     if (!ch.verbWet) return fx.verb <= 0.01;
-    const wet = ch.verbMode === 'serial' ? Math.sin(Math.PI/2*fx.verb)*2.0 : fx.verb*2.0;
+    const wet = ch.verbMode === 'serial' ? Math.sin(Math.PI/2*fx.verb)*1.7 : fx.verb*1.7;
     ch.verbWet.gain.setTargetAtTime(wet, ctx.currentTime, 0.03);
     if (ch.verbDry) ch.verbDry.gain.setTargetAtTime(Math.cos(Math.PI/2*fx.verb), ctx.currentTime, 0.03);
     return true;
@@ -1812,7 +2337,7 @@ registerProcessor('cb-delay', CBDelay);`;
   // ---- LFO section UI ----
   const LFO_DESTS = [
     ['off','Off'],['pan','Pan'],['filter','Filter'],['volume','Volume'],['speed','Speed'],
-    ['dlymix','Delay mix'],['dlytime','Delay time'],['dlyfb','Delay feedbk'],['dlytone','Delay tone'],['verb','Reverb'],['crunch','Crunch'],['filtermix','Filter mix']
+    ['dlymix','Delay mix'],['dlytime','Delay time'],['dlyfb','Delay feedbk'],['dlytone','Delay tone'],['verb','Reverb'],['crunch','Crunch'],['filtermix','Filter mix'],['filtmode','Filter mode']
   ];
   function buildLfoUI(){
     const box = $('lfoRows');
@@ -1985,7 +2510,8 @@ registerProcessor('cb-delay', CBDelay);`;
   });
 
   // ---- FX preset bank: 5 factory + 5 user (persisted) ----
-  const deepFx = f => ({...f, lfos: f.lfos.map(l=>({...l})), dly: {...f.dly}, chain: (f.chain||mkChain()).map(cd=>({...cd}))});
+  const normalizeVrb = p => p.vrb ? p.vrb : mkVrb();
+  const deepFx = f => ({...f, lfos: f.lfos.map(l=>({...l})), dly: {...f.dly}, vrb: {...(f.vrb||mkVrb())}, flt: {...(f.flt||mkFlt())}, boum: {...(f.boum||mkBoum())}, chain: (f.chain||mkChain()).map(cd=>({...cd})), slots: (f.slots||[{fxt:'none'},{fxt:'none'}]).map(s=>({...s}))});
   const mkFactory = over => { const f = fxDefaults(); Object.assign(f, over.base||{}); if (over.dly) f.dly = {...f.dly, ...over.dly}; if (over.lfo0) f.lfos[0] = {...f.lfos[0], ...over.lfo0}; return f; };
   let FACTORY_CACHE = null;
   const factoryPresets = () => FACTORY_CACHE || (FACTORY_CACHE = [
@@ -1998,7 +2524,7 @@ registerProcessor('cb-delay', CBDelay);`;
   let userBank = [null,null,null,null,null];
   function applyFxPreset(obj){
     Object.assign(fx, fxDefaults(), deepFx(obj));
-    syncControls(); syncSimple(); buildLfoUI(); syncDly(); buildChainUI(); restartIfPlaying();
+    syncControls(); syncSimple(); buildLfoUI(); syncDly(); syncVrb(); syncFlt(); syncBoum(); buildChainUI(); restartIfPlaying();
   }
   function renderFxBank(){
     const row = $('fxBankRow');
@@ -2049,15 +2575,15 @@ registerProcessor('cb-delay', CBDelay);`;
     return fx.filterMix >= 0.995 || fx.freq >= 0.995;
   });
   function cardSummary(id){
-    if (id==='crunch') return fx.crunch<0.01 ? 'off' : Math.round(fx.crunch*100)+'%';
-    if (id==='filter') return (fx.freq>=0.995 ? 'open' : Math.round(80*Math.pow(14000/80,fx.freq))+' Hz '+fx.type.slice(0,4)) + (fx.filterMix<0.995 ? ' · mix '+Math.round(fx.filterMix*100)+'%' : '');
+    if (id==='crunch') return fx.crunch<0.01 ? 'off' : (BOUM_MODES[(fx.boum||mkBoum()).mode]+' · drv '+Math.round(fx.boum.driv*100)+'% · '+Math.round(fx.crunch*100)+'%');
+    if (id==='filter') return (fx.freq>=0.995 ? 'open' : Math.round(80*Math.pow(14000/80,fx.freq))+' Hz') + ' ' + fltModeName(fx.flt.mode) + (fx.flt.reso>0.02?' · res '+Math.round(fx.flt.reso*100)+'%':'') + (fx.flt.driv>0.02?' · drv':'') + (fx.filterMix<0.995 ? ' · mix '+Math.round(fx.filterMix*100)+'%' : '');
     if (id==='delay'){ const d = fx.dly; return (d.mix<0.01&&!d.freeze) ? 'off' : Math.round(d.mix*100)+'% · '+(d.sync==='free'?d.time.toFixed(2)+'s':d.sync)+' · fb '+Math.round(d.feedback*100)+'%'+(d.freeze?' · FROZEN':''); }
-    if (id==='reverb') return fx.verb<0.01 ? 'off' : Math.round(fx.verb*100)+'%';
+    if (id==='reverb') return (fx.verb<0.01 && !(fx.vrb&&fx.vrb.freeze)) ? 'off' : (VRB_NAMES[(fx.vrb||mkVrb()).algo]+' · '+Math.round(fx.verb*100)+'%'+(fx.vrb&&fx.vrb.freeze?' · FROZEN':''));
     return '';
   }
   function parkParts(){
     const w = $('cardParts');
-    for (const id of ['dlyBody','dFreeze']){ const el = $(id); if (el) w.appendChild(el); }
+    for (const id of ['dlyBody','dFreeze','vrbBody','vFrz','fltBody','boumBody']){ const el = $(id); if (el) w.appendChild(el); }
     for (const id of ['fVerb','fCrunch','fFreq','fType','fFiltMix','dMix']){
       const el = $(id);
       if (el && el.closest('.sl')) w.appendChild(el.closest('.sl'));
@@ -2073,63 +2599,30 @@ registerProcessor('cb-delay', CBDelay);`;
     parkParts();
     const box = $('chainRows');
     box.innerHTML = '';
-    fx.chain.forEach((card, idx) => {
-      if (idx > 0){
-        const prev = fx.chain[idx-1];
-        const conn = document.createElement('div');
-        conn.className = 'chain-conn';
-        conn.textContent = !prev.on ? '· bypassed ·' : (prev.mode==='serial' ? '│ feeds ↓' : '⤂ branches → end of chain');
-        box.appendChild(conn);
-      }
-      const prev = idx > 0 ? fx.chain[idx-1] : null;
-      const fed = prev && prev.on && prev.mode === 'serial';
+    fx.slots = normalizeSlots(fx);
+    const NAMES = {none:'NONE', crunch:'BOUM', filter:'FLTR', delay:'DELY', verb:'VERB'};
+    fx.slots.forEach((slot, k) => {
       const el = document.createElement('div');
-      el.className = 'fxcard' + (cardOpen[card.id] ? '' : ' closed') + (card.on ? '' : ' bypassed');
-      el.dataset.card = card.id;
+      el.className = 'fxcard';
+      el.dataset.card = slot.fxt === 'verb' ? 'reverb' : slot.fxt;
       const h = document.createElement('div');
       h.className = 'fxcard-h';
-      h.innerHTML = '<span class="drag-h" draggable="true" title="Drag to reorder">≡</span>'
-        + '<button class="mini pow'+(card.on?' toggled':'')+'" title="Bypass">⏻</button>'
-        + '<span class="fxcard-t">'+(cardOpen[card.id]?'▾':'▸')+' '+CARD_META[card.id].name+'</span>'
-        + (fed ? '<span class="fed" title="Fed by the card above">●</span>' : '')
-        + '<span class="fxcard-m"></span>'
-        + '<button class="mini mode" title="Serial (feeds next) or parallel (returns at end)">'+(card.mode==='serial'?'→':'⤂')+'</button>';
+      h.innerHTML = '<span class="fxcard-t">SLOT ' + (k+1) + '</span>'
+        + '<select class="slotsel">' + Object.entries(NAMES).map(([v,n]) => '<option value="'+v+'"'+(slot.fxt===v?' selected':'')+'>'+n+'</option>').join('') + '</select>'
+        + (k === 0 ? '<button class="mini swap" title="Swap slot order">\u21c5</button>' : '')
+        + '<span class="fxcard-m"></span>';
       el.appendChild(h);
       const body = document.createElement('div');
       body.className = 'fxcard-b';
       el.appendChild(body);
-      const adopt = (inputId, into) => { const p = $(inputId); if (p && p.closest('.sl')) into.appendChild(p.closest('.sl')); };
-      if (card.id === 'crunch'){
-        adopt('fCrunch', h);
-        body.innerHTML = '<div class="card-note">Mix drives amount + blend · deep body coming (algorithms, bias)</div>';
-      } else if (card.id === 'filter'){
-        adopt('fFiltMix', h);
-        const row = document.createElement('div'); row.className = 'sliders';
-        body.appendChild(row);
-        adopt('fFreq', row); adopt('fType', row);
-      } else if (card.id === 'delay'){
-        adopt('dMix', h);
-        if ($('dFreeze')) h.insertBefore($('dFreeze'), h.querySelector('.mode'));
-        if ($('dlyBody')) body.appendChild($('dlyBody'));
-      } else if (card.id === 'reverb'){
-        adopt('fVerb', h);
-        body.innerHTML = '<div class="card-note">Deep body coming · size, decay, pre-delay, shimmer, freeze</div>';
-      }
-      h.querySelector('.pow').onclick = e => { e.stopPropagation(); card.on = !card.on; buildChainUI(); restartIfPlaying(); };
-      h.querySelector('.mode').onclick = e => { e.stopPropagation(); card.mode = card.mode==='serial' ? 'parallel' : 'serial'; buildChainUI(); restartIfPlaying(); };
-      h.querySelector('.fxcard-t').onclick = () => { cardOpen[card.id] = !cardOpen[card.id]; buildChainUI(); };
-      const dh = h.querySelector('.drag-h');
-      dh.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(idx)); el.classList.add('dragging'); });
-      dh.addEventListener('dragend', () => el.classList.remove('dragging'));
-      el.addEventListener('dragover', e => e.preventDefault());
-      el.addEventListener('drop', e => {
-        e.preventDefault();
-        const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
-        if (isNaN(from) || from === idx) return;
-        const [m] = fx.chain.splice(from, 1);
-        fx.chain.splice(idx, 0, m);
-        buildChainUI(); restartIfPlaying();
-      });
+      const adopt = (id, into) => { const p = $(id); if (p && p.closest('.sl')) into.appendChild(p.closest('.sl')); };
+      if (slot.fxt === 'crunch'){ adopt('fCrunch', h); if ($('boumBody')) body.appendChild($('boumBody')); }
+      else if (slot.fxt === 'filter'){ adopt('fFiltMix', h); const r = document.createElement('div'); r.className='sliders'; body.appendChild(r); adopt('fFreq', r); if ($('fltBody')) body.appendChild($('fltBody')); }
+      else if (slot.fxt === 'delay'){ adopt('dMix', h); if ($('dFreeze')) h.appendChild($('dFreeze')); if ($('dlyBody')) body.appendChild($('dlyBody')); }
+      else if (slot.fxt === 'verb'){ adopt('fVerb', h); if ($('vFrz')) h.appendChild($('vFrz')); if ($('vrbBody')) body.appendChild($('vrbBody')); }
+      h.querySelector('.slotsel').addEventListener('change', e => { slot.fxt = e.target.value; buildChainUI(); restartIfPlaying(); });
+      const sw = h.querySelector('.swap');
+      if (sw) sw.onclick = () => { fx.slots.reverse(); buildChainUI(); restartIfPlaying(); };
       box.appendChild(el);
     });
     syncChainSummaries();
@@ -2138,7 +2631,7 @@ registerProcessor('cb-delay', CBDelay);`;
   const SLIDER_DEFAULTS = {
     fRate:0, fPitch:0, fPan:0, fVerb:0,
     fCrunch:0, fFreq:1, fFadeIn:0, fFadeOut:0, fGain:1,
-    fFiltMix:1, dMix:0, dTime:0.34, dFb:0.35, dTone:0.5, dPitch:0, dDrive:0.3, dModD:0, dModR:0.8,
+    fFiltMix:1, bDriv:0.35, bComp:0.3, bSped:0.3, bBias:0, bTone:1, fReso:0, fMode:0, fDriv:0, fEnv:0, vDecay:0.5, vPred:0.15, vTone:0.6, vMod:0.3, vShim:0, dMix:0, dTime:0.34, dFb:0.35, dTone:0.5, dPitch:0, dDrive:0.3, dModD:0, dModR:0.8,
     xRate:0, xVerb:0, xGain:1,
     sChaos:1, sShuf:0.3, sRev:0.15, sStut:0.15, sRest:0.1, sJit:0, sSpread:0, sSwing:50,
     fCross:0, inGain:0, monGain:1, mThr:-24, mRatio:4, mMakeup:0
@@ -2180,7 +2673,7 @@ registerProcessor('cb-delay', CBDelay);`;
   });
   sbindX('xVerb','verb','oxVerb', v=>Math.round(v*100)+'%', ch => {
     if (!ch.verbWet) return fx.verb <= 0.01;
-    const wet = ch.verbMode === 'serial' ? Math.sin(Math.PI/2*fx.verb)*2.0 : fx.verb*2.0;
+    const wet = ch.verbMode === 'serial' ? Math.sin(Math.PI/2*fx.verb)*1.7 : fx.verb*1.7;
     ch.verbWet.gain.setTargetAtTime(wet, ctx.currentTime, 0.03);
     if (ch.verbDry) ch.verbDry.gain.setTargetAtTime(Math.cos(Math.PI/2*fx.verb), ctx.currentTime, 0.03);
     return true;
@@ -2194,9 +2687,55 @@ registerProcessor('cb-delay', CBDelay);`;
     $('xVerb').value = fx.verb; $('oxVerb').textContent = Math.round(fx.verb*100)+'%';
     $('xGain').value = fx.gain; $('oxGain').textContent = Math.round(fx.gain*100)+'%';
   }
-  const fxDefaults = () => ({rate:1,pitch:0,verb:0,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,filterMix:1,lfos:mkLfos(),dly:mkDly(),chain:mkChain()});
-  const mkTrack = () => ({clipId:null, pattern:Array.from({length:32},(_,i)=>defaultStep(i)), len:8, gain:0.85, mute:false, fx:fxDefaults()});
-  tracks = [ {clipId:null, pattern, len:sset.len, gain:0.85, mute:false, fx}, mkTrack() ];
+  const fxDefaults = () => ({rate:1,pitch:0,verb:0,crunch:0,freq:1,type:'lowpass',gain:1,fadeIn:0,fadeOut:0,pan:0,filterMix:1,lfos:mkLfos(),dly:mkDly(),vrb:mkVrb(),flt:mkFlt(),boum:mkBoum(),chain:mkChain(),slots:[{fxt:'none'},{fxt:'none'}]});
+  const FM_RATIOS = [0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.5,3,3.5,4,5,6,7,8,10,12,14,16];
+  const mkSynth = () => ({alg:0, oct:-1, rc:3, ra:7, rb:3, harm:0, dtun:0, fb:0.2, mix:0,
+    aAtk:0.001, aDec:0.12, aEnd:0, aLev:0.5, bAtk:0.001, bDec:0.12, bEnd:0, bLev:0, ampA:0.004, ampD:0.35,
+    penv:0, pdec:0.05, nois:0, ndec:0.08});
+  const upgradeVoice = v => {
+    if (v && v.rc != null) return {...mkSynth(), ...v};
+    if (!v) return mkSynth();
+    const near = val => { let bi=3, bd=1e9; FM_RATIOS.forEach((r,i)=>{ const d=Math.abs(r-(val||1)); if(d<bd){bd=d;bi=i;} }); return bi; };
+    const r = v.r||[1,2,1,1], l = v.l||[1,0.5,0,0];
+    return {...mkSynth(), alg:Math.min(7,v.alg||0), oct:v.oct!=null?v.oct:-1, fb:v.fb!=null?v.fb:0.2,
+      rc:near(r[0]), ra:near(r[1]), rb:near(r[2]),
+      aAtk:v.aB||0.001, aDec:v.dB||0.12, aLev:l[1]!=null?l[1]:0.5,
+      bAtk:v.aB||0.001, bDec:v.dB||0.12, bLev:Math.max(l[2]||0, l[3]||0),
+      ampA:v.aA||0.004, ampD:v.dA||0.35};
+  };
+  const trackSynth = t => t.synth; // voice channels own their patch
+  const CH_COUNT = 8; // 0-3 CLIP · 4-7 VOIC (fixed by position)
+  const chType = i => i < 4 ? 'slice' : 'fm';
+  const mkTrack = (i) => ({clipId:null, type:chType(i), synth:mkSynth(), pattern:Array.from({length:32},(_,j)=>defaultStep(j)), len:8, gain:0.7, mute:false, fx:fxDefaults()});
+  function applySynthParams(node, s){
+    const P = n => node.parameters.get(n);
+    P('algo').value = s.alg;
+    P('rc').value = FM_RATIOS[s.rc]; P('ra').value = FM_RATIOS[s.ra]; P('rb').value = FM_RATIOS[s.rb];
+    P('harm').value = s.harm; P('dtun').value = s.dtun; P('fb').value = s.fb; P('mix').value = s.mix;
+    P('aAtk').value = s.aAtk; P('aDec').value = s.aDec; P('aEnd').value = s.aEnd; P('aLev').value = s.aLev;
+    P('bAtk').value = s.bAtk; P('bDec').value = s.bDec; P('bEnd').value = s.bEnd; P('bLev').value = s.bLev;
+    P('ampA').value = s.ampA; P('ampD').value = s.ampD;
+    P('penv').value = s.penv||0; P('pdec').value = s.pdec||0.05; P('nois').value = s.nois||0; P('ndec').value = s.ndec||0.08;
+  }
+  const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const noteName = p => NOTE_NAMES[((p%12)+12)%12] + (p<0 ? '\u2093' : p>=12 ? '\u02b9' : '');
+  function scheduleNote(fmNode, s, st, t, span){
+    const f = 130.8128 * Math.pow(2, s.oct + st.pitch/12);
+    const P = n => fmNode.parameters.get(n);
+    const nHits = st.retrig;
+    for (let k=0;k<nHits;k++){
+      const tk = t + k*span/nHits;
+      P('freq').setValueAtTime(f, Math.max(0, tk-0.002));
+      P('trig').setValueAtTime(1, tk);
+      P('trig').setValueAtTime(0, tk+0.003);
+    }
+    if (st.gate === 'cut'){
+      P('choke').setValueAtTime(1, t+span-0.006);
+      P('choke').setValueAtTime(0, t+span);
+    }
+  }
+  tracks = Array.from({length:CH_COUNT}, (_,i)=>mkTrack(i));
+  tracks[0] = {clipId:null, type:'slice', synth:mkSynth(), pattern, len:sset.len, gain:0.7, mute:false, fx};
   function trackClip(t){ return t.clipId != null ? clips.find(c=>c.id===t.clipId) : null; }
   function switchTrack(i){
     if (i === activeTrack) return;
@@ -2206,8 +2745,8 @@ registerProcessor('cb-delay', CBDelay);`;
     pattern = tracks[i].pattern;
     sset.len = tracks[i].len;
     selStep = -1;
-    syncControls(); syncSimple(); syncDly(); buildChainUI(); buildLfoUI(); syncSeqControls();
-    renderSteps(); renderInsp(); renderTracks();
+    syncControls(); syncSimple(); syncDly(); syncVrb(); syncFlt(); syncBoum(); buildChainUI(); buildLfoUI(); syncSeqControls();
+    renderSteps(); renderInsp(); renderTracks(); syncFmWell();
   }
   function syncControls(){
     $('fRate').value=sliderFromRate(fx.rate); $('oRate').textContent=fx.rate.toFixed(2)+'×';
@@ -2281,6 +2820,9 @@ registerProcessor('cb-delay', CBDelay);`;
     try{ playing.src.onended=null; playing.src.stop(); }catch(e){}
     try{ (playing.chain && playing.chain.lfos || []).forEach(n => n.stop()); }catch(e){}
     try{ if (playing.chain && playing.chain.dlyNode) playing.chain.dlyNode.port.postMessage('k'); }catch(e){}
+    try{ if (playing.chain && playing.chain.vrbNode) playing.chain.vrbNode.port.postMessage('k'); }catch(e){}
+    try{ if (playing.chain && playing.chain.filtWk) playing.chain.filtWk.port.postMessage('k'); }catch(e){}
+    try{ if (playing.chain && playing.chain.boumNode) playing.chain.boumNode.port.postMessage('k'); }catch(e){}
     try{ playing.tailNode.disconnect(); }catch(e){}
     cancelAnimationFrame(playing.rafId);
     playing = null; drawWave();
@@ -2294,10 +2836,14 @@ registerProcessor('cb-delay', CBDelay);`;
       const tg = ctx.createGain();
       tg.gain.value = pt.t.mute ? 0 : pt.t.gain;
       chain.out.connect(tg); tg.connect(master.in);
+      if (pt.fmNode){ try{ pt.fmNode.disconnect(); }catch(e){} pt.fmNode.connect(chain.input); }
       pt.chain = chain; pt.trackGain = tg;
       setTimeout(() => {
         try{ (oldChain.lfos||[]).forEach(n => n.stop()); }catch(e){}
         try{ if (oldChain.dlyNode) oldChain.dlyNode.port.postMessage('k'); }catch(e){}
+        try{ if (oldChain.vrbNode) oldChain.vrbNode.port.postMessage('k'); }catch(e){}
+        try{ if (oldChain.filtWk) oldChain.filtWk.port.postMessage('k'); }catch(e){}
+        try{ if (oldChain.boumNode) oldChain.boumNode.port.postMessage('k'); }catch(e){}
         try{ oldGain.disconnect(); }catch(e){}
       }, 2500); // tails ring out before teardown
     }
@@ -2387,6 +2933,290 @@ registerProcessor('cb-delay', CBDelay);`;
       src.start(t, off, contentSecs + 0.01);
     }
   }
+  $('genToggle').onclick = () => {
+    const b = $('genBody');
+    const open = b.style.display === 'none';
+    b.style.display = open ? '' : 'none';
+    $('genToggle').textContent = (open ? '\u25be' : '\u25b8') + ' Generators \u2014 pattern starters & roll';
+  };
+  // ---- FM voice panel ----
+  function seqFmNodesFor(ti){
+    if (!seq.on || !seq.tracks) return [];
+    return seq.tracks.filter(x => x.fmNode && x.ti === ti).map(x => x.fmNode);
+  }
+  function syncSlHint(){
+    $('slHint').textContent = tracks[activeTrack].type === 'fm'
+      ? 'FM track (V' + ((tracks[activeTrack].voice||0)+1) + ') — step cells are notes · P-locks still apply'
+      : 'select a step · Filter/Volume/Delay-mix write P-locks';
+  }
+  const fmRatioFmt = i => { const r = FM_RATIOS[Math.round(i)]; return r < 1 ? r.toFixed(2).replace('0.','.') : String(r); };
+  const fmMs = v => v < 0.01 ? Math.round(v*1000)+'ms' : v.toFixed(2)+'s';
+  const fmPct = v => Math.round(v*100)+'%';
+  const FM_ALG_NAMES = ['1 CHAIN','2 BRNCH','3 PAIRS','4 STACK','5 SHARE','6 SINES','7 ADDTV','8 SPLIT'];
+  const FM_PAGES = {
+    syn: { name:'sound identity', cells: [
+      {k:'alg',  n:'ALGO', sel:FM_ALG_NAMES, live:'algo'},
+      {k:'rc',   n:'RATIO C', min:0, max:19, step:1, fmt:fmRatioFmt, live:'rc', ratio:true},
+      {k:'ra',   n:'RATIO A', min:0, max:19, step:1, fmt:fmRatioFmt, live:'ra', ratio:true},
+      {k:'rb',   n:'RATIO B', min:0, max:19, step:1, fmt:fmRatioFmt, live:'rb', ratio:true},
+      {k:'harm', n:'HARM', min:-1, max:1, step:0.01, fmt:v=>String(Math.round(v*26)), live:'harm'},
+      {k:'dtun', n:'DTUN', min:-48, max:48, step:1, fmt:v=>(v>0?'+':'')+v+'c', live:'dtun'},
+      {k:'fb',   n:'FDBK', min:0, max:1, step:0.01, fmt:fmPct, live:'fb'},
+      {k:'mix',  n:'MIX X\u2194Y', min:0, max:1, step:0.01, fmt:fmPct, live:'mix'}
+    ]},
+    env: { name:'operator envelopes \u00b7 LEV = op level', cells: [
+      {k:'aAtk', n:'A ATK', min:0.001, max:1.5, step:0.001, fmt:fmMs, live:'aAtk'},
+      {k:'aDec', n:'A DEC', min:0.02, max:4, step:0.01, fmt:fmMs, live:'aDec'},
+      {k:'aEnd', n:'A END', min:0, max:1, step:0.01, fmt:fmPct, live:'aEnd'},
+      {k:'aLev', n:'A LEV', min:0, max:1, step:0.01, fmt:fmPct, live:'aLev'},
+      {k:'bAtk', n:'B ATK', min:0.001, max:1.5, step:0.001, fmt:fmMs, live:'bAtk'},
+      {k:'bDec', n:'B DEC', min:0.02, max:4, step:0.01, fmt:fmMs, live:'bDec'},
+      {k:'bEnd', n:'B END', min:0, max:1, step:0.01, fmt:fmPct, live:'bEnd'},
+      {k:'bLev', n:'B LEV', min:0, max:1, step:0.01, fmt:fmPct, live:'bLev'}
+    ]},
+    amp: { name:'amplitude \u00b7 whole voice', cells: [
+      {k:'ampA', n:'ATK', min:0.001, max:1.5, step:0.001, fmt:fmMs, live:'ampA'},
+      {k:'ampD', n:'DEC', min:0.02, max:4, step:0.01, fmt:fmMs, live:'ampD'},
+      {k:'oct',  n:'OCT', min:-3, max:2, step:1, fmt:v=>(v>0?'+':'')+v, live:null},
+      {k:'penv', n:'PENV', min:0, max:48, step:1, fmt:v=>v+'st', live:'penv'},
+      {k:'pdec', n:'PDEC', min:0.005, max:1, step:0.005, fmt:fmMs, live:'pdec'},
+      {k:'nois', n:'NOIS', min:0, max:1, step:0.01, fmt:fmPct, live:'nois'},
+      {k:'ndec', n:'NDEC', min:0.005, max:2, step:0.005, fmt:fmMs, live:'ndec'}
+    ]}
+  };
+  let fmPage = 'syn';
+  function fmLive(liveName, cell, val){
+    if (!liveName) return;
+    const v = cell && cell.ratio ? FM_RATIOS[Math.round(val)] : val;
+    for (const node of seqFmNodesFor(activeTrack)){
+      const p = node.parameters.get(liveName);
+      if (p) p.setTargetAtTime(v, ctx.currentTime, 0.02);
+    }
+  }
+  function renderFmGrid(){
+    const page = FM_PAGES[fmPage];
+    $('fmPgName').textContent = page.name;
+    document.querySelectorAll('.fmpg').forEach(b => b.classList.toggle('on', b.dataset.fmpg === fmPage));
+    const grid = $('fmGrid');
+    grid.innerHTML = '';
+    const s = tracks[activeTrack].synth;
+    page.cells.forEach(cell => {
+      const el = document.createElement('div');
+      el.className = 'fmcell';
+      const kEl = document.createElement('span'); kEl.className = 'fmk'; kEl.textContent = cell.n;
+      const vEl = document.createElement('span'); vEl.className = 'fmv';
+      el.appendChild(kEl); el.appendChild(vEl);
+      if (cell.sel){
+        const sel = document.createElement('select');
+        cell.sel.forEach((nm, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = nm; sel.appendChild(o); });
+        sel.value = String(s[cell.k]);
+        vEl.textContent = cell.sel[s[cell.k]];
+        sel.addEventListener('change', e => {
+          s[cell.k] = parseInt(e.target.value, 10);
+          vEl.textContent = cell.sel[s[cell.k]];
+          fmLive(cell.live, cell, s[cell.k]);
+          saveMeta();
+        });
+        el.appendChild(sel);
+      } else {
+        const inp = document.createElement('input');
+        inp.type = 'range'; inp.min = cell.min; inp.max = cell.max; inp.step = cell.step;
+        inp.value = s[cell.k];
+        vEl.textContent = cell.fmt(s[cell.k]);
+        inp.addEventListener('input', e => {
+          s[cell.k] = parseFloat(e.target.value);
+          vEl.textContent = cell.fmt(s[cell.k]);
+          fmLive(cell.live, cell, s[cell.k]);
+          saveMeta();
+        });
+        inp.addEventListener('dblclick', () => {
+          s[cell.k] = mkSynth()[cell.k];
+          inp.value = s[cell.k];
+          vEl.textContent = cell.fmt(s[cell.k]);
+          fmLive(cell.live, cell, s[cell.k]);
+          saveMeta();
+        });
+        el.appendChild(inp);
+      }
+      grid.appendChild(el);
+    });
+  }
+  document.querySelectorAll('.fmpg').forEach(b => b.onclick = () => { fmPage = b.dataset.fmpg; renderFmGrid(); });
+  function syncFmWell(){
+    syncSlHint();
+    const on = tracks[activeTrack].type === 'fm' && uiMode !== 'simple';
+    $('fmWell').style.display = on ? '' : 'none';
+    $('fmTrackLbl').textContent = 'CH ' + (activeTrack+1);
+    if (on) renderFmGrid();
+  }
+  const FM_PATCHES = {
+    init:  {},
+    bass:  {alg:0, oct:-2, rc:3, ra:3, rb:7, harm:0.15, fb:0.45, mix:0.15, aLev:0.55, aDec:0.09, bLev:0.3,  bDec:0.07, ampA:0.002, ampD:0.3},
+    keys:  {alg:2, oct:0,  rc:3, ra:7, rb:11, harm:-0.1, fb:0.1, mix:0.35, aLev:0.4,  aDec:0.5, aEnd:0.15, bLev:0.35, bDec:0.3, bEnd:0.1, ampA:0.003, ampD:1.0},
+    bell:  {alg:1, oct:0,  rc:3, ra:10, rb:14, harm:0,   fb:0.08, mix:0.3, aLev:0.5,  aDec:1.6, bLev:0.4,  bDec:1.1, ampA:0.002, ampD:2.4},
+    pluck: {alg:0, oct:-1, rc:3, ra:7, rb:11, harm:0.3,  fb:0.55, mix:0.1, aLev:0.6,  aDec:0.05, bLev:0.45, bDec:0.035, ampA:0.001, ampD:0.35},
+    kick:  {alg:0, oct:-2, rc:3, ra:3, rb:3, fb:0.2, mix:0, aLev:0.18, aDec:0.05, bLev:0, ampA:0.001, ampD:0.42, penv:36, pdec:0.045, nois:0.06, ndec:0.02},
+    snar:  {alg:2, oct:-1, rc:5, ra:8, rb:10, fb:0.3, mix:0.4, aLev:0.4, aDec:0.06, bLev:0.3, bDec:0.05, ampA:0.001, ampD:0.22, penv:12, pdec:0.03, nois:0.75, ndec:0.14},
+    hatc:  {alg:6, oct:1, rc:16, ra:17, rb:18, fb:0.6, mix:0.5, aLev:0.3, aDec:0.03, bLev:0.3, bDec:0.03, ampA:0.001, ampD:0.06, nois:0.85, ndec:0.045},
+    hato:  {alg:6, oct:1, rc:16, ra:17, rb:18, fb:0.6, mix:0.5, aLev:0.3, aDec:0.05, bLev:0.3, bDec:0.05, ampA:0.001, ampD:0.35, nois:0.85, ndec:0.3}
+  };
+  document.querySelectorAll('.chip[data-fp]').forEach(ch => ch.onclick = () => {
+    const p = FM_PATCHES[ch.dataset.fp];
+    if (!p) return;
+    tracks[activeTrack].synth = {...mkSynth(), ...p};
+    syncFmWell();
+    for (const node of seqFmNodesFor(activeTrack)) applySynthParams(node, tracks[activeTrack].synth);
+    saveMeta();
+  });
+  $('fmAudition').onclick = async () => {
+    await ctx.resume();
+    const nodes = seqFmNodesFor(activeTrack);
+    if (nodes.length){
+      const P = n => nodes[0].parameters.get(n);
+      const t = ctx.currentTime + 0.02;
+      P('freq').setValueAtTime(130.8128 * Math.pow(2, tracks[activeTrack].synth.oct), t-0.001);
+      P('trig').setValueAtTime(1, t); P('trig').setValueAtTime(0, t+0.003);
+      return;
+    }
+    await ensureWorklet(ctx);
+    const s = tracks[activeTrack].synth;
+    const n = new AudioWorkletNode(ctx, 'fm-voice', {outputChannelCount:[2]});
+    applySynthParams(n, s);
+    const g = ctx.createGain(); g.gain.value = 0.8;
+    n.connect(g); g.connect(master.in);
+    const P = nm => n.parameters.get(nm);
+    const t = ctx.currentTime + 0.02;
+    P('freq').setValueAtTime(130.8128 * Math.pow(2, s.oct), t-0.001);
+    P('trig').setValueAtTime(1, t); P('trig').setValueAtTime(0, t+0.003);
+    setTimeout(()=>{ try{ n.port.postMessage('k'); g.disconnect(); }catch(e){} }, Math.max(800, s.ampD*1000+400));
+  };
+  // ---- BOUM (ot-boum) controls ----
+  const BOUM_MODES = ['WARM','CRSH','FUZZ','BIT·'];
+  function boumLive(name, val){
+    let did = false;
+    for (const ch of activeChains()){
+      if (ch.boumNode){ ch.boumNode.parameters.get(name).setTargetAtTime(val, ctx.currentTime, 0.03); did = true; }
+    }
+    return did;
+  }
+  const bbind = (id, key, out, fmt) => {
+    $(id).addEventListener('input', e => {
+      fx.boum[key] = parseFloat(e.target.value);
+      $(out).textContent = fmt(fx.boum[key]);
+      if (!boumLive(key, fx.boum[key]) && fx.crunch > 0.01) restartIfPlaying();
+      syncChainSummaries();
+    });
+  };
+  bbind('bDriv','driv','oBDriv', v=>Math.round(v*100)+'%');
+  bbind('bComp','comp','oBComp', v=>v<0.01?'off':Math.round(v*100)+'%');
+  bbind('bSped','sped','oBSped', v=>Math.round(v*100)+'%');
+  bbind('bBias','bias','oBBias', v=>Math.abs(v)<0.02?'off':(v>0?'+':'')+Math.round(v*100)+'%');
+  bbind('bTone','tone','oBTone', v=>v>0.97?'open':Math.round(v*100)+'%');
+  $('bMode').addEventListener('change', e => {
+    fx.boum.mode = parseInt(e.target.value, 10);
+    if (!boumLive('mode', fx.boum.mode) && fx.crunch > 0.01) restartIfPlaying();
+    syncChainSummaries();
+  });
+  function syncBoum(){
+    if (!$('bMode')) return;
+    $('bMode').value = String(fx.boum.mode);
+    $('bDriv').value = fx.boum.driv; $('oBDriv').textContent = Math.round(fx.boum.driv*100)+'%';
+    $('bComp').value = fx.boum.comp; $('oBComp').textContent = fx.boum.comp<0.01?'off':Math.round(fx.boum.comp*100)+'%';
+    $('bSped').value = fx.boum.sped; $('oBSped').textContent = Math.round(fx.boum.sped*100)+'%';
+    $('bBias').value = fx.boum.bias; $('oBBias').textContent = Math.abs(fx.boum.bias)<0.02?'off':(fx.boum.bias>0?'+':'')+Math.round(fx.boum.bias*100)+'%';
+    $('bTone').value = fx.boum.tone; $('oBTone').textContent = fx.boum.tone>0.97?'open':Math.round(fx.boum.tone*100)+'%';
+  }
+  // ---- filter (ml-filt) controls ----
+  const fltModeName = m => m < 0.2 ? 'LP' : m < 0.45 ? 'LP→BP' : m < 0.55 ? 'BP' : m < 0.8 ? 'BP→HP' : 'HP';
+  function fltLive(name, val){
+    let did = false;
+    for (const ch of activeChains()){
+      if (ch.filtWk){ ch.filtWk.parameters.get(name).setTargetAtTime(val, ctx.currentTime, 0.03); did = true; }
+    }
+    return did;
+  }
+  const fltbind = (id, key, out, fmt, pname) => {
+    $(id).addEventListener('input', e => {
+      fx.flt[key] = parseFloat(e.target.value);
+      $(out).textContent = fmt(fx.flt[key]);
+      if (!fltLive(pname, fx.flt[key])) restartIfPlaying(); // filter may need spin-up
+      syncChainSummaries();
+    });
+  };
+  fltbind('fReso','reso','oFReso', v=>v<0.01?'off':Math.round(v*100)+'%', 'reso');
+  fltbind('fMode','mode','oFMode', fltModeName, 'mode');
+  fltbind('fDriv','driv','oFDriv', v=>v<0.01?'off':Math.round(v*100)+'%', 'driv');
+  fltbind('fEnv','env','oFEnv', v=>Math.abs(v)<0.02?'off':(v>0?'+':'')+Math.round(v*100)+'%', 'env');
+  function syncFlt(){
+    if (!$('fReso')) return;
+    $('fReso').value = fx.flt.reso; $('oFReso').textContent = fx.flt.reso<0.01?'off':Math.round(fx.flt.reso*100)+'%';
+    $('fMode').value = fx.flt.mode; $('oFMode').textContent = fltModeName(fx.flt.mode);
+    $('fDriv').value = fx.flt.driv; $('oFDriv').textContent = fx.flt.driv<0.01?'off':Math.round(fx.flt.driv*100)+'%';
+    $('fEnv').value = fx.flt.env; $('oFEnv').textContent = Math.abs(fx.flt.env)<0.02?'off':(fx.flt.env>0?'+':'')+Math.round(fx.flt.env*100)+'%';
+  }
+  // ---- verb (bs-verb) controls ----
+  (function(){
+    const fz = document.createElement('button');
+    fz.className = 'mini'; fz.id = 'vFrz'; fz.textContent = 'FRZE'; fz.title = 'Freeze the tail';
+    $('cardParts').appendChild(fz);
+  })();
+  function vrbLive(name, val){
+    let did = false;
+    for (const ch of activeChains()){
+      if (ch.vrbNode){ ch.vrbNode.parameters.get(name).setTargetAtTime(val, ctx.currentTime, 0.03); did = true; }
+    }
+    return did;
+  }
+  const vbind = (id, key, out, fmt) => {
+    $(id).addEventListener('input', e => {
+      fx.vrb[key] = parseFloat(e.target.value);
+      $(out).textContent = fmt(fx.vrb[key]);
+      if (!vrbLive(key, fx.vrb[key]) && fx.verb > 0.01) restartIfPlaying();
+      syncChainSummaries();
+    });
+  };
+  vbind('vDecay','decay','oVDecay', v=>Math.round(v*100)+'%');
+  vbind('vPred','pred','oVPred', v=>Math.round(v*100)+'%');
+  vbind('vTone','tone','oVTone', v=>Math.round(v*100)+'%');
+  vbind('vMod','mod','oVMod', v=>Math.round(v*100)+'%');
+  vbind('vShim','shim','oVShim', v=>v<0.01?'off':Math.round(v*100)+'%');
+  $('vAlgo').addEventListener('change', e => {
+    fx.vrb.algo = parseInt(e.target.value, 10);
+    restartIfPlaying(); // structural: tank sizes change; hot-swap ring-out = spillover
+    syncChainSummaries();
+  });
+  $('vFrz').onclick = () => {
+    fx.vrb.freeze = !fx.vrb.freeze;
+    $('vFrz').classList.toggle('toggled', fx.vrb.freeze);
+    if (!vrbLive('freeze', fx.vrb.freeze ? 1 : 0)) restartIfPlaying();
+  };
+  const VRB_CHIPS = {
+    tight:{algo:0, decay:0.3, pred:0.05, tone:0.7, mod:0.2, shim:0},
+    cath: {algo:1, decay:0.8, pred:0.3, tone:0.45, mod:0.3, shim:0},
+    wash: {algo:3, decay:0.85, pred:0.2, tone:0.5, mod:0.7, shim:0},
+    cloud:{algo:4, decay:0.7, pred:0.5, tone:0.6, mod:0.6, shim:0.4},
+    gated:{algo:6, decay:0.6, pred:0.05, tone:0.65, mod:0.2, shim:0},
+    bloom:{algo:5, decay:0.75, pred:0.2, tone:0.6, mod:0.4, shim:0.6}
+  };
+  document.querySelectorAll('.chip[data-vp]').forEach(ch => ch.onclick = () => {
+    const p = VRB_CHIPS[ch.dataset.vp];
+    if (!p) return;
+    fx.vrb = {...mkVrb(), ...p};
+    syncVrb();
+    if (fx.verb < 0.05){ fx.verb = 0.35; $('fVerb').value = 0.35; $('fVerb').dispatchEvent(new Event('input')); }
+    restartIfPlaying();
+  });
+  function syncVrb(){
+    if (!$('vAlgo')) return;
+    $('vAlgo').value = String(fx.vrb.algo);
+    $('vDecay').value = fx.vrb.decay; $('oVDecay').textContent = Math.round(fx.vrb.decay*100)+'%';
+    $('vPred').value = fx.vrb.pred; $('oVPred').textContent = Math.round(fx.vrb.pred*100)+'%';
+    $('vTone').value = fx.vrb.tone; $('oVTone').textContent = Math.round(fx.vrb.tone*100)+'%';
+    $('vMod').value = fx.vrb.mod; $('oVMod').textContent = Math.round(fx.vrb.mod*100)+'%';
+    $('vShim').value = fx.vrb.shim; $('oVShim').textContent = fx.vrb.shim<0.01?'off':Math.round(fx.vrb.shim*100)+'%';
+    $('vFrz').classList.toggle('toggled', !!fx.vrb.freeze);
+    syncChainSummaries();
+  }
   // ---- track tabs / mini mixer ----
   function renderTracks(){
     const row = $('trackRow');
@@ -2396,12 +3226,15 @@ registerProcessor('cb-delay', CBDelay);`;
       const c = trackClip(t);
       const el = document.createElement('div');
       el.className = 'ttab' + (i === activeTrack ? ' on' : '');
-      el.innerHTML = '<span class="tname">T' + (i+1) + '</span>'
-        + '<span class="tclip">' + (c ? c.name : '— no clip') + '</span>'
+      const code = t.type === 'fm' ? 'VOIC' : 'CLIP';
+      const src = t.type === 'fm' ? 'patch' : (c ? c.name : '\u2014');
+      el.innerHTML = '<span class="tname">' + (i+1) + '</span>'
+        + '<span class="tcode">' + code + '</span>'
+        + '<span class="tclip">' + src + '</span>'
         + '<button class="mini' + (t.mute ? ' muted' : '') + '" title="Mute">M</button>'
-        + '<input type="range" min="0" max="1.2" step="0.01" value="' + t.gain + '" title="Track level — double-click resets">';
+        + '<input type="range" min="0" max="1.2" step="0.01" value="' + t.gain + '" title="Channel level \u2014 double-click resets">';
       el.querySelector('.tname').onclick = () => switchTrack(i);
-      el.onclick = e => { if (e.target === el) switchTrack(i); };
+      el.onclick = e => { if (e.target === el || e.target.classList.contains('tcode') || e.target.classList.contains('tclip')) switchTrack(i); };
       el.querySelector('.mini').onclick = e => {
         e.stopPropagation();
         t.mute = !t.mute;
@@ -2415,13 +3248,14 @@ registerProcessor('cb-delay', CBDelay);`;
         if (seq.on && seq.tracks && !t.mute){ const pt = seq.tracks.find(x=>x.ti===i); if (pt) pt.trackGain.gain.setTargetAtTime(t.gain, ctx.currentTime, 0.02); }
         saveMeta();
       });
-      g.addEventListener('dblclick', () => { g.value = 0.85; g.dispatchEvent(new Event('input')); });
+      g.addEventListener('dblclick', () => { g.value = 0.7; g.dispatchEvent(new Event('input')); });
       row.appendChild(el);
     });
-    if ($('assignBtn')) $('assignBtn').textContent = 'Assign ▸ T' + (activeTrack+1);
+    if ($('assignBtn')) $('assignBtn').textContent = 'Assign \u25b8 CH' + (activeTrack+1);
   }
   $('assignBtn').onclick = () => {
     if (!cur) return;
+    if (tracks[activeTrack].type === 'fm'){ setStatus('CH' + (activeTrack+1) + ' is a voice channel \u2014 clips go on CH1\u20134.'); return; }
     tracks[activeTrack].clipId = cur.id;
     renderTracks(); saveMeta();
     setStatus(cur.name + ' → T' + (activeTrack+1) + '.');
@@ -2490,10 +3324,24 @@ registerProcessor('cb-delay', CBDelay);`;
     await ctx.resume();
     tracks[activeTrack].len = sset.len;
     // auto-assign the shelf selection to the active track if it's empty
-    if (tracks[activeTrack].clipId == null && cur) tracks[activeTrack].clipId = cur.id;
+    if (tracks[activeTrack].type !== 'fm' && tracks[activeTrack].clipId == null && cur) tracks[activeTrack].clipId = cur.id;
     const playable = [];
     for (let ti=0; ti<tracks.length; ti++){
       const t = tracks[ti];
+      if (t.type === 'fm'){
+        if (!t.pattern.slice(0, Math.max(1,t.len)).some(st => st.on)) continue; // empty voice channel: no node
+        await ensureWorklet(ctx);
+        const chain = await buildChain(ctx, t.fx);
+        const trackGain = ctx.createGain();
+        trackGain.gain.value = t.mute ? 0 : t.gain;
+        chain.out.connect(trackGain);
+        trackGain.connect(master.in);
+        const fmNode = new AudioWorkletNode(ctx, 'fm-voice', {outputChannelCount:[2]});
+        applySynthParams(fmNode, trackSynth(t));
+        fmNode.connect(chain.input);
+        playable.push({ti, t, chain, trackGain, fmNode});
+        continue;
+      }
       const clip = trackClip(t);
       if (!clip) continue;
       const bounds = sliceBoundariesFor(clip);
@@ -2508,7 +3356,7 @@ registerProcessor('cb-delay', CBDelay);`;
       trackGain.connect(master.in);
       playable.push({ti, t, clip, bounds, bufN, bufR, chain, trackGain});
     }
-    if (!playable.length){ setSlStatus('No track has a clip — select a clip or hit Assign.'); return; }
+    if (!playable.length){ setSlStatus('Nothing to play — assign a clip or switch a track to FM.'); return; }
     const stepDur = STEP();
     seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], tracks:playable, stepDur };
     const tick = () => {
@@ -2524,12 +3372,16 @@ registerProcessor('cb-delay', CBDelay);`;
           const st = pt.t.pattern[stepIdx];
           let fired = -1;
           if (st.on && condPass(st.cond, loop, stepIdx)){
-            scheduleStep(ctx, pt.chain, pt.bufN, pt.bufR, st, t, span, pt.bounds, pt.t.fx);
+            if (pt.t.type === 'fm'){
+              scheduleNote(pt.fmNode, trackSynth(pt.t), st, t, span);
+            } else {
+              scheduleStep(ctx, pt.chain, pt.bufN, pt.bufR, st, t, span, pt.bounds, pt.t.fx);
+              fired = Math.min(st.slice, sset.grid-1);
+            }
             applyLocks(pt.chain, st, pt.t.fx, t, tNext);
-            fired = Math.min(st.slice, sset.grid-1);
           }
           if (pt.ti === activeTrack){
-            seq.hits.push({t, span, stepIdx, sliceIdx:fired, clipId:pt.clip.id});
+            seq.hits.push({t, span, stepIdx, sliceIdx:fired, clipId:pt.clip ? pt.clip.id : null});
             if (seq.hits.length > 96) seq.hits.shift();
           }
         }
@@ -2559,6 +3411,10 @@ registerProcessor('cb-delay', CBDelay);`;
     for (const pt of (seq.tracks || [])){
       try{ (pt.chain.lfos || []).forEach(n => n.stop()); }catch(e){}
       try{ if (pt.chain.dlyNode) pt.chain.dlyNode.port.postMessage('k'); }catch(e){}
+      try{ if (pt.chain.vrbNode) pt.chain.vrbNode.port.postMessage('k'); }catch(e){}
+      try{ if (pt.chain.filtWk) pt.chain.filtWk.port.postMessage('k'); }catch(e){}
+      try{ if (pt.chain.boumNode) pt.chain.boumNode.port.postMessage('k'); }catch(e){}
+      try{ if (pt.fmNode) pt.fmNode.port.postMessage('k'); }catch(e){}
       try{ pt.trackGain.disconnect(); }catch(e){}
     }
     $('patBtn').classList.remove('toggled');
@@ -2579,16 +3435,17 @@ registerProcessor('cb-delay', CBDelay);`;
       const el = document.createElement('div');
       el.className = 'stp' + (st.on?'':' off') + (i===selStep?' sel':'');
       el.dataset.idx = i;
+      const isFm = tracks[activeTrack].type === 'fm';
       const tags = [];
-      if (st.rev) tags.push('⇄');
+      if (st.rev && !isFm) tags.push('⇄');
       if (st.retrig>1) tags.push('×'+st.retrig);
       if (st.cond!=='100') tags.push(st.cond==='first'?'1st':st.cond);
-      if (st.pitch) tags.push((st.pitch>0?'+':'')+st.pitch);
+      if (st.pitch && !isFm) tags.push((st.pitch>0?'+':'')+st.pitch);
       if (st.pan) tags.push((st.pan<0?'L':'R')+Math.abs(Math.round(st.pan*100)));
       if (st.gate==='ring') tags.push('~');
       if (st.locks && Object.keys(st.locks).length) tags.push('P');
       el.innerHTML = `<span class="idx">${i+1}</span>${st.locked?'<span class="lk">🔒</span>':''}
-        <span class="n">${st.on ? st.slice+1 : '·'}</span>
+        <span class="n" style="${isFm?'font-size:12px':''}">${st.on ? (isFm ? noteName(st.pitch) : st.slice+1) : '·'}</span>
         <span class="tags">${tags.join(' ')}</span>`;
       el.addEventListener('click', () => { selStep = (selStep===i ? -1 : i); renderSteps(); renderInsp(); syncLockView(); });
       el.addEventListener('contextmenu', e => { e.preventDefault(); pushPatternUndo(); toggleStep(i); });
@@ -2615,6 +3472,10 @@ registerProcessor('cb-delay', CBDelay);`;
     box.classList.remove('hidden');
     const st = pattern[selStep];
     $('inspTitle').textContent = 'Step ' + (selStep+1);
+    const isFm = tracks[activeTrack].type === 'fm';
+    $('iSlice').closest('.sl').style.display = isFm ? 'none' : '';
+    $('iPitch').closest('.sl').querySelector('label').textContent = isFm ? 'Note ±st' : 'Pitch';
+    $('iRev').closest('.sl').style.display = isFm ? 'none' : '';
     $('iOn').classList.toggle('toggled', st.on);
     $('iOn').textContent = st.on ? 'On' : 'Off';
     const sl = $('iSlice');
@@ -2847,6 +3708,41 @@ registerProcessor('cb-delay', CBDelay);`;
     if (!cur) return;
     stopSeq(); stopPlayback();
     setSlStatus('Bouncing…');
+    const at = tracks[activeTrack];
+    if (at.type === 'fm'){
+      setSlStatus('Bouncing FM…');
+      const stepDurF = STEP();
+      const stepsF = sset.len * sset.passes;
+      const dlyF = fx.dly;
+      const dTailF = (dlyF.mix>0.005||dlyF.freeze) ? Math.min(4, 1.2 + dlyTimeSec(dlyF)*(dlyF.feedback>0.85?4:2)) : 0;
+      const synthF = trackSynth(at);
+      const totalF = stepTimeOf(stepsF, 0.02, stepDurF) + (fx.verb>0.01?2.4:0) + dTailF + Math.max(0.5, synthF.ampD) + 0.3;
+      const ocF = new OfflineAudioContext(2, Math.ceil(totalF * MIX_SR), MIX_SR);
+      const chainF = await buildChain(ocF, fx);
+      chainF.out.connect(ocF.destination);
+      await ensureWorklet(ocF);
+      const fmF = new AudioWorkletNode(ocF, 'fm-voice', {outputChannelCount:[2]});
+      applySynthParams(fmF, synthF);
+      fmF.connect(chainF.input);
+      for (let abs=0; abs<stepsF; abs++){
+        const stepIdx = abs % sset.len;
+        const loop = Math.floor(abs / sset.len);
+        const st = pattern[stepIdx];
+        if (st.on && condPass(st.cond, loop, stepIdx)){
+          const t = stepTimeOf(abs, 0.02, stepDurF);
+          const span = stepTimeOf(abs+1, 0.02, stepDurF) - t;
+          scheduleNote(fmF, synthF, st, t, span);
+          applyLocks(chainF, st, fx, t, stepTimeOf(abs+1, 0.02, stepDurF));
+        }
+      }
+      const renderedF = await applyMasterOffline(await ocF.startRendering());
+      const blobF = new Blob([encodeWav(renderedF)], {type:'audio/wav'});
+      addClip(renderedF, blobF, 'FM T' + (activeTrack+1) + ' ✂' + sset.seed, false);
+      Object.assign(fx, fxDefaults());
+      syncControls(); syncSimple(); buildLfoUI(); syncDly(); buildChainUI();
+      setSlStatus('Bounced FM → shelf · FX printed, chain reset.');
+      return;
+    }
     const srcClip = trackClip(tracks[activeTrack]) || cur;
     if (!srcClip){ setSlStatus('No clip on this track.'); return; }
     const bounds = sliceBoundariesFor(srcClip);
@@ -2856,7 +3752,7 @@ registerProcessor('cb-delay', CBDelay);`;
     const steps = sset.len * sset.passes;
     const bDly = fx.dly;
     const bDlyTail = (bDly.mix>0.005 || bDly.freeze) ? Math.min(4, 1.2 + dlyTimeSec(bDly)*(bDly.feedback>0.85?4:2)) : 0;
-    const tail = (fx.verb>0.01?2.4:0) + bDlyTail + 0.3;
+    const tail = (fx.verb>0.01?(1.5+normalizeVrb(fx).decay*5):0) + bDlyTail + 0.3;
     const totalDur = stepTimeOf(steps, 0.02, stepDur) + tail;
     const oc = new OfflineAudioContext(2, Math.ceil(totalDur * MIX_SR), MIX_SR);
     const chain = await buildChain(oc, fx);
@@ -2877,7 +3773,7 @@ registerProcessor('cb-delay', CBDelay);`;
     addClip(rendered, blob, srcClip.name.slice(0,18) + ' ✂' + sset.seed, false);
     // the FX are printed into the bounce — reset the live chain so playback isn't double-processed
     Object.assign(fx, fxDefaults());
-    syncControls(); syncSimple(); buildLfoUI(); syncDly(); buildChainUI();
+    syncControls(); syncSimple(); buildLfoUI(); syncDly(); syncVrb(); syncFlt(); syncBoum(); buildChainUI();
     setSlStatus('Bounced → shelf · FX printed, chain reset.');
   };
 
@@ -3067,9 +3963,13 @@ registerProcessor('cb-delay', CBDelay);`;
   rebuildMaster();
   buildLfoUI();
   syncDly();
+  syncVrb();
+  syncFlt();
+  syncBoum();
   buildChainUI();
   renderFxBank();
   renderTracks();
+  syncFmWell();
   renderSteps();
   drawWave();
   restore();
