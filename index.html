@@ -114,7 +114,17 @@
   .fxcard-h .sl{min-width:150px;margin-left:8px}
   .fxcard-b .sliders{margin-top:4px}
   .card-note{font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:2px 0 6px}
-  .ttab{display:flex;align-items:center;gap:5px;background:var(--panel-hi);border-radius:8px;padding:4px 8px;box-shadow:0 2px 4px rgba(0,0,0,.15);border:2px solid transparent}
+  #trackRow{flex-direction:column;gap:5px;align-items:stretch}
+  .ttab{display:flex;align-items:center;gap:8px;background:var(--panel-hi);border-radius:8px;padding:5px 10px;box-shadow:0 2px 4px rgba(0,0,0,.15);border:2px solid transparent;width:100%;box-sizing:border-box}
+  .ttab.on{border-color:var(--tk, var(--amber))}
+  .tkdot{width:14px;height:14px;min-width:14px;border-radius:50%;border:2px solid rgba(0,0,0,.18);cursor:pointer;padding:0}
+  .ttab .tclip{flex:1;max-width:none}
+  .ttab input[type=range]{width:90px}
+  .stp{position:relative}
+  .stp:not(.off)::after{content:'';position:absolute;left:5px;right:5px;top:3px;height:3px;border-radius:2px;background:var(--tk, var(--amber))}
+  .fxcard-h{border-left:4px solid var(--tk, transparent);padding-left:8px;border-radius:2px}
+  .fmpg.on{background:var(--tk, var(--amber));border-color:var(--tk, var(--amber))}
+  .well.tinted{border-left:4px solid var(--tk, transparent)}
   .ttab .tcode{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--ink-soft);cursor:pointer}
   #trackRow{flex-wrap:wrap;gap:6px}
   .ttab.on{border-color:var(--amber)}
@@ -134,6 +144,8 @@
   .fmv{font-family:var(--mono);font-size:12px;color:#e8f2e2;min-height:15px}
   .fmcell input[type=range]{width:100%;height:14px;accent-color:var(--amber)}
   .fmcell select{background:#222922;color:#e8f2e2;border:1px solid #3a453a;border-radius:4px;font-family:var(--mono);font-size:10px;padding:2px}
+  body.stepsel .fmcell.lk .fmk{color:var(--amber);font-weight:700}
+  body.stepsel .fmcell.lk input[type=range]{accent-color:var(--amber)}
   body.stepsel .sl:has(#fFreq) label, body.stepsel .sl:has(#fGain) label, body.stepsel .sl:has(#dMix) label{color:var(--amber);font-weight:700}
   body.stepsel .sl:has(#fFreq) input::-webkit-slider-thumb, body.stepsel .sl:has(#fGain) input::-webkit-slider-thumb, body.stepsel .sl:has(#dMix) input::-webkit-slider-thumb{background:linear-gradient(#FFC076,var(--amber));border-color:#B65F0D}
   .pgbtn.playing{box-shadow:0 0 0 2px var(--amber)}
@@ -184,7 +196,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <h1>CLIPDECK <small>v0.19</small></h1>
+      <h1>CLIPDECK <small>v0.20</small></h1>
       <span>desktop audio · record / slice / sequence / export</span>
     </div>
 
@@ -264,11 +276,14 @@
           <button class="chip" data-c="amber" data-fp="snar">Snare</button>
           <button class="chip" data-c="blue" data-fp="hatc">Hat·</button>
           <button class="chip" data-c="green" data-fp="hato">Hat+</button>
+          <button class="chip" data-c="blue" data-fp="va">Analog</button>
+          <button class="chip" data-c="green" data-fp="swarm">Swarm</button>
           <button class="chip" data-c="amber" id="fmAudition">▶ note</button>
         </div>
         <div class="fmscreen">
           <div class="fmpages">
-            <button class="fmpg on" data-fmpg="syn">SYN</button>
+            <button class="fmpg on" data-fmpg="modl">MODL</button>
+            <button class="fmpg" data-fmpg="syn">SYN</button>
             <button class="fmpg" data-fmpg="env">ENV</button>
             <button class="fmpg" data-fmpg="amp">AMP</button>
             <span class="fmpgname" id="fmPgName">sound identity</span>
@@ -564,8 +579,44 @@
 
 <script>
 (() => {
+  /* ═══════════════════════════════════════════════════════════════════════════
+   CLIPDECK (working name) — single-file browser groovebox. v0.19.3
+   One HTML file, zero dependencies, deployed to GitHub Pages. Chrome/Edge.
+
+   ARCHITECTURE — signal flow, top to bottom:
+     CAPTURE (desktop/mic → INPUT gain printed into take · MON = listen level)
+       → CLIPS shelf (IndexedDB blobs) ─ drag/assign onto channels 1–4
+     8 CHANNELS, fixed types by position: 1–4 CLIP (slice sampler) · 5–8 VOIC (4-op FM, channel owns its patch)
+       each channel: pattern (32 steps, per-channel length = polymeter) → source
+       → FX SLOTS (two, serial: NONE/HEAT/FLTR/DELY/VERB, per-slot mix)
+       → voice strip (speed/pitch/pan/fades/volume) → channel gain → MASTER (comp+limiter, applied ONCE,
+       identically live and offline) → out. Timeline/mix preview and MON feed master directly.
+
+   AUDIO WORKLET MODULE (one blob, five processors — offline contexts get all five free):
+     cb-delay  character delay: whole feedback loop in DSP (fb→110%, tone/pitch/drive IN loop, freeze, ping-pong)
+     fm-voice  4-op FM: ops C/A/B1·B2, X/Y bus algorithms + MIX, HARM, mod envs w/ END+LEV, drum PENV/NOIS
+     bs-verb   multi-algo reverb: Dattorro tank ×6 configs + granular engine (GRAN), FRZE latch
+     ml-filt   TPT SVF: saturated integrators, self-osc reso, LP→BP→HP morph, pre-filter drive, env follower
+     ot-boum   "HEAT": drive → linked FF compressor → shaper (WARM/CRSH/FUZZ/BIT) → tone → auto-makeup
+
+   INVARIANTS (do not violate — history in SPEC.md):
+     · bounce prints the sound, then resets the FX chain
+     · slices belong to the clip, never the trim; Commit trim crops + remaps (undoable)
+     · master applied once at the end; live path == offline path
+     · LFO destinations exclusive; cross-mod flows downhill only (LFO1→2/3/4)
+     · live params for continuous controls; structural changes hot-swap chains (transport never stops);
+       tempo changes re-anchor the clock (retimeSeq); the ONE legit transport stop = channel source change
+     · loop-gain rule: any nonlinearity inside a feedback loop is gain-normalized (tanh(x·k)/k)
+     · harness (/tmp/harness.js) runs before every release
+
+   SYSTEM INDEX (search the banner text):
+     worklet module · master bus · transport math · undo · IndexedDB · analysis · DSP helpers
+     · chain compiler · recording · clips shelf · waveform+trim · fx controls · LFO UI · delay UI
+     · HEAT/filter/verb controls · FX preset bank · FX slots UI · tracks & mixer · clip playback
+     · sequencer (scheduler · p-locks · hot-swap · retime) · FM voice panel · timeline · init
+  ═══════════════════════════════════════════════════════════════════════════ */
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  // ---- character delay: whole feedback loop (pitch/tone/saturation) lives in one worklet ----
+  // ================= audio worklet module: cb-delay · fm-voice · bs-verb · ml-filt · ot-boum =================
   const CB_DELAY_SRC = `
 class CBDelay extends AudioWorkletProcessor{
   static get parameterDescriptors(){return[
@@ -637,6 +688,10 @@ class CBDelay extends AudioWorkletProcessor{
 }
 registerProcessor('cb-delay', CBDelay);
 // 4-op mono FM voice. envA = carrier amplitude, envB = modulator index. Gate via trig edge, choke = fast kill.
+// VOICE = model host. model 0 = house 4-op FM; models 1+ derived from Mutable Instruments Plaits
+// (Émilie Gillet, MIT license — gratefully used, not imitated). Universal macros mHarm/mTimb/mMrph:
+// hand-mapped per model so every position is musical — which makes every p-lock musical. For FM they
+// overlay the deep patch (HARM offset, mod-index scale, X/Y mix offset); for VA/SWARM they ARE the voice.
 // ops: 0=C carrier · 1=A mod · 2=B1 · 3=B2 (B pair shares ratio+env; DTUN detunes B2)
 // each algorithm has X and Y output buses; MIX crossfades them (Digitone-inspired)
 const FM_ALGS=[
@@ -669,7 +724,9 @@ class FMVoice extends AudioWorkletProcessor{
     {name:'bEnd',defaultValue:0,minValue:0,maxValue:1},{name:'bLev',defaultValue:0,minValue:0,maxValue:1},
     {name:'ampA',defaultValue:0.004,minValue:0.001,maxValue:2},{name:'ampD',defaultValue:0.35,minValue:0.02,maxValue:4},
     {name:'penv',defaultValue:0,minValue:0,maxValue:48},{name:'pdec',defaultValue:0.05,minValue:0.005,maxValue:1},
-    {name:'nois',defaultValue:0,minValue:0,maxValue:1},{name:'ndec',defaultValue:0.08,minValue:0.005,maxValue:2}
+    {name:'nois',defaultValue:0,minValue:0,maxValue:1},{name:'ndec',defaultValue:0.08,minValue:0.005,maxValue:2},
+    {name:'model',defaultValue:0,minValue:0,maxValue:2},
+    {name:'mHarm',defaultValue:0.5,minValue:0,maxValue:1},{name:'mTimb',defaultValue:0.5,minValue:0,maxValue:1},{name:'mMrph',defaultValue:0.5,minValue:0,maxValue:1}
   ];}
   constructor(){super();
     this.dead=false;
@@ -678,21 +735,93 @@ class FMVoice extends AudioWorkletProcessor{
     this.stAmp=0; this.stA=0; this.stB=0;
     this.lastTrig=0; this.fb4=0; this.choking=false;
     this.envP=0; this.envN=0; this.rs=0x9e3779b9;
+    this.vph=[0,0]; this.swp=[0.11,0.29,0.43,0.61,0.77,0.93]; this.mlp=0;
   }
+  blep(t,dt){ if(t<dt){ t/=dt; return t+t-t*t-1; } if(t>1-dt){ t=(t-1)/dt; return t*t+t+t+1; } return 0; }
+  psaw(ph,dt){ return 2*ph-1-this.blep(ph,dt); }
   process(inputs,outputs,pm){
     if(this.dead) return false;
     const out=outputs[0], L=out[0], R=out[1]||out[0];
     const n=L.length;
+    // idle fast path: dead envelopes + no trigger anywhere in this block -> silence, skip all DSP
+    if(this.envAmp<1e-4 && this.stAmp!==1 && this.envN<1e-4){
+      let anyTrig=false;
+      if(pm.trig.length>1){ for(let i=0;i<n;i++) if(pm.trig[i]>0.5){ anyTrig=true; break; } }
+      else anyTrig=pm.trig[0]>0.5;
+      if(!anyTrig && this.lastTrig<=0.5){ L.fill(0); R.fill(0); return true; }
+    }
+    const model=Math.min(2,Math.max(0,Math.round(pm.model[0])));
+    const mH=pm.mHarm[0], mT=pm.mTimb[0], mMr=pm.mMrph[0];
+    if(model>0){
+      // ---- Plaits-derived analog models (MIT) ----
+      const penv=pm.penv[0], dP=Math.exp(-1/(pm.pdec[0]*sampleRate));
+      const nz=pm.nois[0], dN=Math.exp(-1/(pm.ndec[0]*sampleRate));
+      const aAmp=Math.max(1,pm.ampA[0]*sampleRate), dAmp=Math.exp(-1/(pm.ampD[0]*sampleRate));
+      const tlA=0.08+mT*0.9;
+      for(let i=0;i<n;i++){
+        const trig=pm.trig.length>1?pm.trig[i]:pm.trig[0];
+        const choke=pm.choke.length>1?pm.choke[i]:pm.choke[0];
+        const freq=pm.freq.length>1?pm.freq[i]:pm.freq[0];
+        const vel=pm.vel.length>1?pm.vel[i]:pm.vel[0];
+        if(trig>0.5&&this.lastTrig<=0.5){ this.stAmp=1; this.choking=false; this.envP=1; this.envN=1; }
+        this.lastTrig=trig;
+        if(choke>0.5) this.choking=true;
+        if(this.choking){ this.envAmp*=0.9975; this.envN*=0.9975; }
+        else{
+          if(this.stAmp===1){ this.envAmp+=1/aAmp; if(this.envAmp>=1){this.envAmp=1;this.stAmp=2;} }
+          else if(this.stAmp===2) this.envAmp*=dAmp;
+        }
+        this.envP*=dP; this.envN*=dN;
+        const pMul=penv>0.01?Math.pow(2,(penv*this.envP)/12):1;
+        const f0=Math.min(8000,freq*pMul);
+        let y=0;
+        if(model===1){
+          // VA: two oscs, MRPH = saw→square→pulse shape, HARM = detune spread (→ fifth), TIMB = fold-drive
+          const f2=f0*Math.pow(2,(mH*7)/12);
+          const d1=f0/sampleRate, d2=f2/sampleRate;
+          const shp=(ph,dt)=>{
+            const s=this.psaw(ph,dt);
+            if(mMr<0.5){ const x2=mMr*2; const pw=0.5; let p2=ph+pw; p2-=Math.floor(p2); const sq=this.psaw(ph,dt)-this.psaw(p2,dt); return s*(1-x2)+sq*x2*0.7; }
+            const pw=0.5-(mMr-0.5)*0.46; let p2=ph+pw; p2-=Math.floor(p2);
+            return (this.psaw(ph,dt)-this.psaw(p2,dt))*0.7;
+          };
+          this.vph[0]+=d1; if(this.vph[0]>=1)this.vph[0]-=1;
+          this.vph[1]+=d2; if(this.vph[1]>=1)this.vph[1]-=1;
+          y=shp(this.vph[0],d1)+shp(this.vph[1],d2)*0.7;
+          y=Math.tanh(y*(1+mT*3))/(1+mT*1.1);
+          y*=0.5;
+        } else {
+          // SWARM: six detuned polyblep saws, HARM = spread, TIMB = brightness, MRPH = saw→square swarm
+          let s=0;
+          for(let k2=0;k2<6;k2++){
+            const det=1+((k2-2.5)/2.5)*mH*0.045;
+            const dk2=(f0*det)/sampleRate;
+            this.swp[k2]+=dk2; if(this.swp[k2]>=1)this.swp[k2]-=1;
+            if(mMr<0.02) s+=this.psaw(this.swp[k2],dk2);
+            else { let p2=this.swp[k2]+0.5-mMr*0.3; p2-=Math.floor(p2); s+=(this.psaw(this.swp[k2],dk2)-this.psaw(p2,dk2)*mMr)* (1/(1+mMr*0.2)); }
+          }
+          this.mlp+=tlA*(s*0.2-this.mlp);
+          y=this.mlp;
+        }
+        let nzs=0;
+        if(nz>0.005){ this.rs^=this.rs<<13; this.rs^=this.rs>>>17; this.rs^=this.rs<<5; nzs=((this.rs>>>0)/2147483648-1)*nz*this.envN*0.8; }
+        const o=(y+nzs)*this.envAmp*vel*0.5;
+        L[i]=o; R[i]=o;
+      }
+      return true;
+    }
     const alg=FM_ALGS[Math.min(7,Math.max(0,Math.round(pm.algo[0])))];
     const rat=[pm.rc[0],pm.ra[0],pm.rb[0],pm.rb[0]*Math.pow(2,pm.dtun[0]/1200)];
-    const harm=pm.harm[0], fb=pm.fb[0], mix=pm.mix[0];
+    const harm=Math.max(-1,Math.min(1,pm.harm[0]+(mH-0.5)*1.2));
+    const fb=pm.fb[0];
+    const mix=Math.max(0,Math.min(1,pm.mix[0]+(mMr-0.5)));
     const gX=Math.cos(mix*1.5708), gY=Math.sin(mix*1.5708);
     const aA=Math.max(1,pm.aAtk[0]*sampleRate), dA=Math.exp(-1/(pm.aDec[0]*sampleRate)), eA=pm.aEnd[0], lA=pm.aLev[0];
     const aB=Math.max(1,pm.bAtk[0]*sampleRate), dB=Math.exp(-1/(pm.bDec[0]*sampleRate)), eB=pm.bEnd[0], lB=pm.bLev[0];
     const aAmp=Math.max(1,pm.ampA[0]*sampleRate), dAmp=Math.exp(-1/(pm.ampD[0]*sampleRate));
     const penv=pm.penv[0], dP=Math.exp(-1/(pm.pdec[0]*sampleRate));
     const nz=pm.nois[0], dN=Math.exp(-1/(pm.ndec[0]*sampleRate));
-    const TAU=6.283185307, IDX=7;
+    const TAU=6.283185307, IDX=7*(0.4+mT*1.2); // TIMB scales modulation index
     const hp=Math.max(0,harm), hn=Math.max(0,-harm);
     const hNorm=1/(1+hp*0.55+hn*0.4);
     const v=[0,0,0,0];
@@ -1087,6 +1216,7 @@ registerProcessor('ot-boum', OTBoum);`;
   const dbToLin = v => Math.pow(10, v/20);
   // live master bus: everything audible routes through master.in
   const master = { in: ctx.createGain(), comp: ctx.createDynamicsCompressor(), makeup: ctx.createGain(), lim: null };
+  // ================= master bus: comp + limiter · exactly one connect(ctx.destination), in rebuildMaster =================
   function applyMasterParams(){
     master.comp.threshold.value = mset.thr;
     master.comp.knee.value = 6;
@@ -1141,6 +1271,7 @@ registerProcessor('ot-boum', OTBoum);`;
   const setTlStatus = t => { $('tlStatus').textContent = t; };
   const nextFrame = () => new Promise(r => setTimeout(r, 20));
   // Step length in seconds. div is stored in beats (1/4→1, 1/8→0.5, 1/8T→1/3, 1/16→0.25, 1/16T→1/6).
+  // ================= transport math: absolute-step clock · swing lives in stepTimeOf =================
   function STEP(){ return sset.div * (60 / sset.bpm); }
   // Absolute step index → time offset from t0, with swing (50–75%) delaying odd steps within each pair.
   function stepTimeOf(abs, t0, stepDur){
@@ -1236,7 +1367,7 @@ registerProcessor('ot-boum', OTBoum);`;
     tracks[activeTrack].len = sset.len;
     s.put({idSeq, uidSeq, crossfade, limiter, autoTrimOn, snapOn, uiMode, inGainDb, monLevel, mset:{...mset}, sset:{...sset},
       pattern:pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined})),
-      tracks: tracks.map(t=>({clipId:t.clipId, synth:{...t.synth}, len:t.len, gain:t.gain, mute:t.mute, pattern:t.pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined}))}))
+      tracks: tracks.map(t=>({clipId:t.clipId, color:t.color, synth:{...t.synth}, len:t.len, gain:t.gain, mute:t.mute, pattern:t.pattern.map(p=>({...p, locks:p.locks?{...p.locks}:undefined}))}))
     }, 'state');
   }).catch(()=>{});
   const getAll = store => new Promise((res) => {
@@ -1307,6 +1438,7 @@ registerProcessor('ot-boum', OTBoum);`;
             t.len = st2.len || 8;
             t.gain = st2.gain != null ? Math.min(1, st2.gain) : 0.7;
             t.mute = !!st2.mute;
+            if (st2.color) t.color = st2.color;
             if (st2.synth) t.synth = upgradeVoice(st2.synth);
             else if (legacyFm && typeof st2.voice === 'number' && legacyVoices[st2.voice]) t.synth = upgradeVoice(legacyVoices[st2.voice]);
             if (Array.isArray(st2.pattern)) t.pattern = t.pattern.map((p,j)=> st2.pattern[j] ? {...defaultStep(j), ...st2.pattern[j]} : p);
@@ -1538,6 +1670,7 @@ registerProcessor('ot-boum', OTBoum);`;
     o.start(0);
     return { node: o, freqParam: o.frequency, freqScale: 1 };
   }
+  // ================= chain compiler: fx state -> node graph · slot walker, serial · refs consumed by live handlers + LFO router =================
   async function buildChain(c, p){
     const lfoDefs = (p.lfos || []).map(l => ({...l}));
     const active = lfoDefs.map(l => (l && l.dest !== 'off' && l.depth > 0.005) ? l : null);
@@ -2557,7 +2690,7 @@ registerProcessor('ot-boum', OTBoum);`;
   }
   const saveFxBank = () => tx('meta','readwrite', s => s.put(userBank, 'fxbank')).catch(()=>{});
 
-  // ---- chain UI: cards, connectors, drag-reorder, bypass, serial/parallel ----
+  // ================= FX slots UI: two serial slots (HEAT/FLTR/DELY/VERB) · module bodies adopted from the parts warehouse =================
   const CARD_META = { crunch:{name:'CRUNCH'}, filter:{name:'FILTER'}, delay:{name:'DELAY'}, reverb:{name:'REVERB'} };
   const cardOpen = { crunch:false, filter:false, delay:true, reverb:false };
   (function(){
@@ -2600,7 +2733,7 @@ registerProcessor('ot-boum', OTBoum);`;
     const box = $('chainRows');
     box.innerHTML = '';
     fx.slots = normalizeSlots(fx);
-    const NAMES = {none:'NONE', crunch:'BOUM', filter:'FLTR', delay:'DELY', verb:'VERB'};
+    const NAMES = {none:'NONE', crunch:'HEAT', filter:'FLTR', delay:'DELY', verb:'VERB'};
     fx.slots.forEach((slot, k) => {
       const el = document.createElement('div');
       el.className = 'fxcard';
@@ -2691,7 +2824,8 @@ registerProcessor('ot-boum', OTBoum);`;
   const FM_RATIOS = [0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.5,3,3.5,4,5,6,7,8,10,12,14,16];
   const mkSynth = () => ({alg:0, oct:-1, rc:3, ra:7, rb:3, harm:0, dtun:0, fb:0.2, mix:0,
     aAtk:0.001, aDec:0.12, aEnd:0, aLev:0.5, bAtk:0.001, bDec:0.12, bEnd:0, bLev:0, ampA:0.004, ampD:0.35,
-    penv:0, pdec:0.05, nois:0, ndec:0.08});
+    penv:0, pdec:0.05, nois:0, ndec:0.08,
+    model:0, mHarm:0.5, mTimb:0.5, mMrph:0.5});
   const upgradeVoice = v => {
     if (v && v.rc != null) return {...mkSynth(), ...v};
     if (!v) return mkSynth();
@@ -2703,10 +2837,11 @@ registerProcessor('ot-boum', OTBoum);`;
       bAtk:v.aB||0.001, bDec:v.dB||0.12, bLev:Math.max(l[2]||0, l[3]||0),
       ampA:v.aA||0.004, ampD:v.dA||0.35};
   };
+  const TK_PALETTE = ['#E8590C','#D6453D','#3B82C4','#3F9C5A','#8B5CB8','#2AA198','#C74E86','#8A7B4F'];
   const trackSynth = t => t.synth; // voice channels own their patch
   const CH_COUNT = 8; // 0-3 CLIP · 4-7 VOIC (fixed by position)
   const chType = i => i < 4 ? 'slice' : 'fm';
-  const mkTrack = (i) => ({clipId:null, type:chType(i), synth:mkSynth(), pattern:Array.from({length:32},(_,j)=>defaultStep(j)), len:8, gain:0.7, mute:false, fx:fxDefaults()});
+  const mkTrack = (i) => ({clipId:null, type:chType(i), color:TK_PALETTE[i%8], synth:mkSynth(), pattern:Array.from({length:32},(_,j)=>defaultStep(j)), len:8, gain:0.7, mute:false, fx:fxDefaults()});
   function applySynthParams(node, s){
     const P = n => node.parameters.get(n);
     P('algo').value = s.alg;
@@ -2716,6 +2851,8 @@ registerProcessor('ot-boum', OTBoum);`;
     P('bAtk').value = s.bAtk; P('bDec').value = s.bDec; P('bEnd').value = s.bEnd; P('bLev').value = s.bLev;
     P('ampA').value = s.ampA; P('ampD').value = s.ampD;
     P('penv').value = s.penv||0; P('pdec').value = s.pdec||0.05; P('nois').value = s.nois||0; P('ndec').value = s.ndec||0.08;
+    P('model').value = s.model||0;
+    P('mHarm').value = s.mHarm!=null?s.mHarm:0.5; P('mTimb').value = s.mTimb!=null?s.mTimb:0.5; P('mMrph').value = s.mMrph!=null?s.mMrph:0.5;
   }
   const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const noteName = p => NOTE_NAMES[((p%12)+12)%12] + (p<0 ? '\u2093' : p>=12 ? '\u02b9' : '');
@@ -2733,9 +2870,16 @@ registerProcessor('ot-boum', OTBoum);`;
       P('choke').setValueAtTime(1, t+span-0.006);
       P('choke').setValueAtTime(0, t+span);
     }
+    // model + macro locks: set just before the note, revert at the step boundary
+    const L2 = st.locks || {};
+    const auto = (pname, lv, base) => { try{ const p2=P(pname); p2.setValueAtTime(lv, Math.max(0, t-0.004)); p2.setValueAtTime(base, t+span); }catch(e){} };
+    if (L2.modl != null) auto('model', L2.modl, s.model||0);
+    if (L2.mharm != null) auto('mHarm', L2.mharm, s.mHarm!=null?s.mHarm:0.5);
+    if (L2.mtimb != null) auto('mTimb', L2.mtimb, s.mTimb!=null?s.mTimb:0.5);
+    if (L2.mmrph != null) auto('mMrph', L2.mmrph, s.mMrph!=null?s.mMrph:0.5);
   }
   tracks = Array.from({length:CH_COUNT}, (_,i)=>mkTrack(i));
-  tracks[0] = {clipId:null, type:'slice', synth:mkSynth(), pattern, len:sset.len, gain:0.7, mute:false, fx};
+  tracks[0] = {clipId:null, type:'slice', color:TK_PALETTE[0], synth:mkSynth(), pattern, len:sset.len, gain:0.7, mute:false, fx};
   function trackClip(t){ return t.clipId != null ? clips.find(c=>c.id===t.clipId) : null; }
   function switchTrack(i){
     if (i === activeTrack) return;
@@ -2827,7 +2971,8 @@ registerProcessor('ot-boum', OTBoum);`;
     cancelAnimationFrame(playing.rafId);
     playing = null; drawWave();
   }
-  // hot-swap: rebuild per-track chains WITHOUT stopping the transport; old chains ring out and retire
+  // ================= uninterrupted transport: hot-swap (chains) · retimeSeq (tempo) · refreshSeqBounds (grid) =================
+  // hot-swap: rebuild per-track chains WITHOUT stopping the transport; old chains ring out and retire (2.5s = spillover)
   async function rebuildSeqChains(){
     if (!seq.on || !seq.tracks) return;
     for (const pt of seq.tracks){
@@ -2953,7 +3098,14 @@ registerProcessor('ot-boum', OTBoum);`;
   const fmMs = v => v < 0.01 ? Math.round(v*1000)+'ms' : v.toFixed(2)+'s';
   const fmPct = v => Math.round(v*100)+'%';
   const FM_ALG_NAMES = ['1 CHAIN','2 BRNCH','3 PAIRS','4 STACK','5 SHARE','6 SINES','7 ADDTV','8 SPLIT'];
+  const MODEL_NAMES = ['FM4','VA\u00b7ANALOG','SWARM'];
   const FM_PAGES = {
+    modl: { name:'model \u00b7 macros are the guaranteed p-lock trio \u00b7 select a step to lock them', cells: [
+      {k:'model', n:'MODL', sel:MODEL_NAMES, live:'model', lockKey:'modl'},
+      {k:'mHarm', n:'HARM', min:0, max:1, step:0.01, fmt:fmPct, live:'mHarm', lockKey:'mharm'},
+      {k:'mTimb', n:'TIMB', min:0, max:1, step:0.01, fmt:fmPct, live:'mTimb', lockKey:'mtimb'},
+      {k:'mMrph', n:'MRPH', min:0, max:1, step:0.01, fmt:fmPct, live:'mMrph', lockKey:'mmrph'}
+    ]},
     syn: { name:'sound identity', cells: [
       {k:'alg',  n:'ALGO', sel:FM_ALG_NAMES, live:'algo'},
       {k:'rc',   n:'RATIO C', min:0, max:19, step:1, fmt:fmRatioFmt, live:'rc', ratio:true},
@@ -2984,7 +3136,7 @@ registerProcessor('ot-boum', OTBoum);`;
       {k:'ndec', n:'NDEC', min:0.005, max:2, step:0.005, fmt:fmMs, live:'ndec'}
     ]}
   };
-  let fmPage = 'syn';
+  let fmPage = 'modl';
   function fmLive(liveName, cell, val){
     if (!liveName) return;
     const v = cell && cell.ratio ? FM_RATIOS[Math.round(val)] : val;
@@ -2994,15 +3146,20 @@ registerProcessor('ot-boum', OTBoum);`;
     }
   }
   function renderFmGrid(){
+    const mdl = tracks[activeTrack].synth.model || 0;
+    if (mdl !== 0 && (fmPage === 'syn' || fmPage === 'env')) fmPage = 'modl'; // deep FM pages belong to model 0
     const page = FM_PAGES[fmPage];
     $('fmPgName').textContent = page.name;
-    document.querySelectorAll('.fmpg').forEach(b => b.classList.toggle('on', b.dataset.fmpg === fmPage));
+    document.querySelectorAll('.fmpg').forEach(b => {
+      b.classList.toggle('on', b.dataset.fmpg === fmPage);
+      if (b.dataset.fmpg === 'syn' || b.dataset.fmpg === 'env') b.style.display = mdl === 0 ? '' : 'none';
+    });
     const grid = $('fmGrid');
     grid.innerHTML = '';
     const s = tracks[activeTrack].synth;
     page.cells.forEach(cell => {
       const el = document.createElement('div');
-      el.className = 'fmcell';
+      el.className = 'fmcell' + (cell.lockKey ? ' lk' : '');
       const kEl = document.createElement('span'); kEl.className = 'fmk'; kEl.textContent = cell.n;
       const vEl = document.createElement('span'); vEl.className = 'fmv';
       el.appendChild(kEl); el.appendChild(vEl);
@@ -3012,9 +3169,22 @@ registerProcessor('ot-boum', OTBoum);`;
         sel.value = String(s[cell.k]);
         vEl.textContent = cell.sel[s[cell.k]];
         sel.addEventListener('change', e => {
-          s[cell.k] = parseInt(e.target.value, 10);
+          const v2 = parseInt(e.target.value, 10);
+          if (cell.lockKey && selStep >= 0 && tracks[activeTrack].type === 'fm'){
+            const st = pattern[selStep];
+            st.locks = st.locks || {};
+            const fresh = !(cell.lockKey in st.locks);
+            st.locks[cell.lockKey] = v2;
+            vEl.textContent = cell.sel[v2] + ' \u25cf';
+            sel.value = String(s[cell.k]); // voice unchanged; the step carries the lock
+            if (fresh) renderSteps();
+            saveMeta();
+            return;
+          }
+          s[cell.k] = v2;
           vEl.textContent = cell.sel[s[cell.k]];
           fmLive(cell.live, cell, s[cell.k]);
+          if (cell.k === 'model') renderFmGrid(); // page set follows the model
           saveMeta();
         });
         el.appendChild(sel);
@@ -3024,12 +3194,34 @@ registerProcessor('ot-boum', OTBoum);`;
         inp.value = s[cell.k];
         vEl.textContent = cell.fmt(s[cell.k]);
         inp.addEventListener('input', e => {
-          s[cell.k] = parseFloat(e.target.value);
+          const v2 = parseFloat(e.target.value);
+          if (cell.lockKey && selStep >= 0 && tracks[activeTrack].type === 'fm'){
+            const st = pattern[selStep];
+            st.locks = st.locks || {};
+            const fresh = !(cell.lockKey in st.locks);
+            st.locks[cell.lockKey] = v2;
+            vEl.textContent = cell.fmt(v2) + ' \u25cf';
+            if (fresh) renderSteps();
+            saveMeta();
+            return;
+          }
+          s[cell.k] = v2;
           vEl.textContent = cell.fmt(s[cell.k]);
           fmLive(cell.live, cell, s[cell.k]);
           saveMeta();
         });
         inp.addEventListener('dblclick', () => {
+          if (cell.lockKey && selStep >= 0 && tracks[activeTrack].type === 'fm'){
+            const st = pattern[selStep];
+            if (st.locks && cell.lockKey in st.locks){
+              delete st.locks[cell.lockKey];
+              if (!Object.keys(st.locks).length) delete st.locks;
+              inp.value = s[cell.k];
+              vEl.textContent = cell.fmt(s[cell.k]);
+              renderSteps(); saveMeta();
+              return;
+            }
+          }
           s[cell.k] = mkSynth()[cell.k];
           inp.value = s[cell.k];
           vEl.textContent = cell.fmt(s[cell.k]);
@@ -3058,7 +3250,9 @@ registerProcessor('ot-boum', OTBoum);`;
     kick:  {alg:0, oct:-2, rc:3, ra:3, rb:3, fb:0.2, mix:0, aLev:0.18, aDec:0.05, bLev:0, ampA:0.001, ampD:0.42, penv:36, pdec:0.045, nois:0.06, ndec:0.02},
     snar:  {alg:2, oct:-1, rc:5, ra:8, rb:10, fb:0.3, mix:0.4, aLev:0.4, aDec:0.06, bLev:0.3, bDec:0.05, ampA:0.001, ampD:0.22, penv:12, pdec:0.03, nois:0.75, ndec:0.14},
     hatc:  {alg:6, oct:1, rc:16, ra:17, rb:18, fb:0.6, mix:0.5, aLev:0.3, aDec:0.03, bLev:0.3, bDec:0.03, ampA:0.001, ampD:0.06, nois:0.85, ndec:0.045},
-    hato:  {alg:6, oct:1, rc:16, ra:17, rb:18, fb:0.6, mix:0.5, aLev:0.3, aDec:0.05, bLev:0.3, bDec:0.05, ampA:0.001, ampD:0.35, nois:0.85, ndec:0.3}
+    hato:  {alg:6, oct:1, rc:16, ra:17, rb:18, fb:0.6, mix:0.5, aLev:0.3, aDec:0.05, bLev:0.3, bDec:0.05, ampA:0.001, ampD:0.35, nois:0.85, ndec:0.3},
+    va:    {model:1, oct:-1, mHarm:0.28, mTimb:0.35, mMrph:0.2, ampA:0.003, ampD:0.5},
+    swarm: {model:2, oct:0, mHarm:0.55, mTimb:0.6, mMrph:0.15, ampA:0.12, ampD:1.4}
   };
   document.querySelectorAll('.chip[data-fp]').forEach(ch => ch.onclick = () => {
     const p = FM_PATCHES[ch.dataset.fp];
@@ -3218,6 +3412,16 @@ registerProcessor('ot-boum', OTBoum);`;
     syncChainSummaries();
   }
   // ---- track tabs / mini mixer ----
+  // ================= tracks & mixer: 8 fixed-type channels (1-4 CLIP, 5-8 VOIC) · color tint threads downstream via --tk =================
+  function applyTrackTint(){
+    const c = tracks[activeTrack].color || TK_PALETTE[activeTrack%8];
+    document.documentElement.style.setProperty('--tk', c);
+    for (const el of [$('stepRow'), $('chainRows'), $('fmWell')]){
+      if (!el) continue;
+      const well = el.classList && el.classList.contains('well') ? el : el.closest('.well');
+      if (well) well.classList.add('tinted');
+    }
+  }
   function renderTracks(){
     const row = $('trackRow');
     if (!row) return;
@@ -3228,11 +3432,20 @@ registerProcessor('ot-boum', OTBoum);`;
       el.className = 'ttab' + (i === activeTrack ? ' on' : '');
       const code = t.type === 'fm' ? 'VOIC' : 'CLIP';
       const src = t.type === 'fm' ? 'patch' : (c ? c.name : '\u2014');
-      el.innerHTML = '<span class="tname">' + (i+1) + '</span>'
+      el.innerHTML = '<button class="tkdot" title="Track color \u2014 click to cycle" style="background:' + (t.color||TK_PALETTE[i%8]) + '"></button>'
+        + '<span class="tname">' + (i+1) + '</span>'
         + '<span class="tcode">' + code + '</span>'
         + '<span class="tclip">' + src + '</span>'
         + '<button class="mini' + (t.mute ? ' muted' : '') + '" title="Mute">M</button>'
         + '<input type="range" min="0" max="1.2" step="0.01" value="' + t.gain + '" title="Channel level \u2014 double-click resets">';
+      el.querySelector('.tkdot').onclick = e => {
+        e.stopPropagation();
+        const cur2 = TK_PALETTE.indexOf(t.color);
+        t.color = TK_PALETTE[(cur2 + 1) % TK_PALETTE.length];
+        e.target.style.background = t.color;
+        if (i === activeTrack) applyTrackTint();
+        saveMeta();
+      };
       el.querySelector('.tname').onclick = () => switchTrack(i);
       el.onclick = e => { if (e.target === el || e.target.classList.contains('tcode') || e.target.classList.contains('tclip')) switchTrack(i); };
       el.querySelector('.mini').onclick = e => {
@@ -3242,7 +3455,7 @@ registerProcessor('ot-boum', OTBoum);`;
         if (seq.on && seq.tracks){ const pt = seq.tracks.find(x=>x.ti===i); if (pt) pt.trackGain.gain.setTargetAtTime(t.mute ? 0 : t.gain, ctx.currentTime, 0.02); }
         saveMeta();
       };
-      const g = el.querySelector('input');
+      const g = el.querySelector('input[type=range]');
       g.addEventListener('input', e => {
         t.gain = parseFloat(e.target.value);
         if (seq.on && seq.tracks && !t.mute){ const pt = seq.tracks.find(x=>x.ti===i); if (pt) pt.trackGain.gain.setTargetAtTime(t.gain, ctx.currentTime, 0.02); }
@@ -3252,6 +3465,7 @@ registerProcessor('ot-boum', OTBoum);`;
       row.appendChild(el);
     });
     if ($('assignBtn')) $('assignBtn').textContent = 'Assign \u25b8 CH' + (activeTrack+1);
+    applyTrackTint();
   }
   $('assignBtn').onclick = () => {
     if (!cur) return;
@@ -3301,6 +3515,7 @@ registerProcessor('ot-boum', OTBoum);`;
       syncControls(); syncDly();
     }
   }
+  // ================= p-locks: per-step param automation (set at step, revert at boundary) · capture via lockIntercept =================
   function applyLocks(chain, st, tFx, t, tEnd){
     if (!st.locks) return;
     const L = st.locks;
@@ -3329,8 +3544,8 @@ registerProcessor('ot-boum', OTBoum);`;
     for (let ti=0; ti<tracks.length; ti++){
       const t = tracks[ti];
       if (t.type === 'fm'){
-        if (!t.pattern.slice(0, Math.max(1,t.len)).some(st => st.on)) continue; // empty voice channel: no node
-        await ensureWorklet(ctx);
+        await ensureWorklet(ctx); // lanes always build; idle voices are near-free (worklet fast path)
+
         const chain = await buildChain(ctx, t.fx);
         const trackGain = ctx.createGain();
         trackGain.gain.value = t.mute ? 0 : t.gain;
@@ -3356,7 +3571,7 @@ registerProcessor('ot-boum', OTBoum);`;
       trackGain.connect(master.in);
       playable.push({ti, t, clip, bounds, bufN, bufR, chain, trackGain});
     }
-    if (!playable.length){ setSlStatus('Nothing to play — assign a clip or switch a track to FM.'); return; }
+    if (!playable.length){ setSlStatus('Nothing to play — drop a clip on CH1–4 or add steps on a voice channel.'); return; }
     const stepDur = STEP();
     seq = { on:true, abs:0, t0:ctx.currentTime+0.06, timer:null, rafId:null, hits:[], tracks:playable, stepDur };
     const tick = () => {
